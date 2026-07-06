@@ -1,3 +1,6 @@
+## Project Structure
+
+```text
 hivemind/
 ├── README.md
 ├── Makefile                        # make dev, make deploy, make demo
@@ -75,3 +78,4 @@ hivemind/
     │   ├── hooks/
     │   └── api/                    # fetch từ scoring-api
     └── public/
+```
