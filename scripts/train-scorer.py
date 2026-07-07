@@ -123,13 +123,13 @@ def evaluate(clf, X_test, y_test) -> dict:
     print(f"    FN={cm[1][0]:>7,}  TP={cm[1][1]:>6,}")
 
     # Routing distribution ở các threshold HiveMind
-    for thresh_name, thresh in [('low(<0.30)', 0.30), ('high(>0.85)', 0.85)]:
+    for thresh_name, thresh in [('low(<0.001>)', 0.001), ('high(>0.999)', 0.999)]:
         if 'low' in thresh_name:
             n = (proba < thresh).sum()
         else:
             n = (proba > thresh).sum()
         print(f"  {thresh_name}: {n:,} ({n/len(proba):.1%})")
-    medium = ((proba >= 0.30) & (proba <= 0.85)).sum()
+    medium = ((proba >= 0.001) & (proba <= 0.999)).sum()
     print(f"  medium(agent): {medium:,} ({medium/len(proba):.1%})")
 
     return metrics

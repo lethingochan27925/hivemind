@@ -1,0 +1,18 @@
+{
+  "auprc": 0.9973,
+  "auroc": 0.9995,
+  "precision": 0.9531,
+  "recall": 0.9976,
+  "f1": 0.9748,
+  "routing_thresholds": {
+    "low": 0.3,
+    "high": 0.85
+  },
+  "routing_pct": {
+    "low": 0.9778,
+    "medium": 0.0192,
+    "high": 0.003
+  },
+  "dataset": "PaySim (CC BY 4.0)",
+  "model": "XGBClassifier(max_depth=3, scale_pos_weight=auto)"
+}

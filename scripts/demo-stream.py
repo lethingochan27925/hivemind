@@ -22,9 +22,9 @@ from psycopg2.extras import execute_batch
 
 
 # ── Routing thresholds ──────────────────────────────────────
-LOW_THRESHOLD  = 0.30   # < 0.30  → auto approve
-HIGH_THRESHOLD = 0.85   # > 0.85  → auto block
-# 0.30..0.85 → HiveMind agent investigates (~15-25% tổng giao dịch)
+LOW_THRESHOLD  = 0.001   # < 0.001  → auto approve
+HIGH_THRESHOLD = 0.999   # > 0.999  → auto block
+# 0.001..0.999   → HiveMind agent investigates (~15-25% tổng giao dịch)
 
 
 def load_paysim(csv_path: str, limit: int = None) -> pd.DataFrame:

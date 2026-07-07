@@ -2,4 +2,4 @@ data/raw/
 data/processed/
 *.pkl
 *.joblib
-.env
+.env.example
