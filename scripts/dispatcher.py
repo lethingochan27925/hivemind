@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 
 # --- Cấu hình -------------------------------------------------------------
 
-load_dotenv('.env.example')  # đọc file .env THẬT (không phải .env.example — đó chỉ là mẫu)
+load_dotenv('.env')  # đọc file .env THẬT (không phải .env.example — đó chỉ là mẫu)
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 BATCH_SIZE = int(os.environ.get("DISPATCHER_BATCH_SIZE", 100))
