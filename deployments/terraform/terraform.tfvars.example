@@ -1,0 +1,19 @@
+# Copy thanh terraform.tfvars -- KHONG commit len git
+
+project     = "hivemind"
+environment = "dev"
+
+vpc_cidr           = "10.0.0.0/16"
+az_count           = 2
+kubernetes_version = "1.30"
+node_instance_type = "t3.medium"
+node_desired_size  = 2
+node_min_size      = 1
+node_max_size      = 4
+k8s_namespace      = "hivemind"
+
+bedrock_model_id           = "anthropic.claude-haiku-4-5-20251001-v1:0"
+bedrock_embedding_model_id = "amazon.titan-embed-text-v2:0"
+
+alert_email           = "your@email.com"
+billing_threshold_usd = 50

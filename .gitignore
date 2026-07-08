@@ -1,5 +1,31 @@
+# Data
 data/raw/
 data/processed/
 *.pkl
 *.joblib
-.env.example
+
+*.csv
+
+# Environment
+.env
+
+# Terraform
+**/.terraform/
+**/.terraform.lock.hcl
+*.tfstate
+*.tfstate.backup
+*.tfplan
+*.tfvars
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Go
+*.exe
+*/bootstrap
+
+# OS
+.DS_Store
+Thumbs.db

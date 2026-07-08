@@ -184,4 +184,3 @@ if __name__ == '__main__':
                         help='Output metrics JSON path')
     args = parser.parse_args()
 
-    main(args.csv, args.model, args.eval)
