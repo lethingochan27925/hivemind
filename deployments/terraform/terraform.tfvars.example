@@ -1,14 +1,7 @@
-# Copy thành terraform.tfvars — KHÔNG commit lên git
+# Copy thanh terraform.tfvars -- KHONG commit len git
 
 project     = "hivemind"
 environment = "dev"
-aws_region  = "us-east-1"
-
-cockroachdb_connection_string = "postgresql://user:pass@cluster.crdb.io:26257/hivemind?sslmode=verify-full"
-cockroachdb_mcp_endpoint      = "https://mcp.crdb.io/your-cluster-id"
-
-bedrock_model_id           = "anthropic.claude-haiku-4-5-20251001-v1:0"
-bedrock_embedding_model_id = "amazon.titan-embed-text-v2:0"
 
 vpc_cidr           = "10.0.0.0/16"
 az_count           = 2
@@ -18,6 +11,9 @@ node_desired_size  = 2
 node_min_size      = 1
 node_max_size      = 4
 k8s_namespace      = "hivemind"
+
+bedrock_model_id           = "anthropic.claude-haiku-4-5-20251001-v1:0"
+bedrock_embedding_model_id = "amazon.titan-embed-text-v2:0"
 
 alert_email           = "your@email.com"
 billing_threshold_usd = 50

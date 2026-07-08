@@ -3,7 +3,7 @@ data/raw/
 data/processed/
 *.pkl
 *.joblib
-.env.example
+
 *.csv
 
 # Environment

@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# -- Load .env ----------------------------------------------------------------
+ENV_FILE=".env"
+[ -f "$ENV_FILE" ] || { echo "[ERROR] .env not found. Copy .env.example and fill in values."; exit 1; }
+set -a; source "$ENV_FILE"; set +a
+
+# -- Config -------------------------------------------------------------------
 PROJECT=${PROJECT:-"hivemind"}
 ENVIRONMENT=${ENVIRONMENT:-"dev"}
-AWS_REGION=${AWS_REGION:-$(aws configure get region 2>/dev/null || echo "ap-southeast-1")}
+AWS_REGION=${AWS_DEFAULT_REGION:-"ap-southeast-1"}
 TERRAFORM_DIR="deployments/terraform"
 BOOTSTRAP_DIR="${TERRAFORM_DIR}/modules/bootstrap"
 
@@ -11,16 +17,17 @@ log()  { echo "[$(date '+%H:%M:%S')] [INFO]  $*"; }
 ok()   { echo "[$(date '+%H:%M:%S')] [OK]    $*"; }
 err()  { echo "[$(date '+%H:%M:%S')] [ERROR] $*" >&2; exit 1; }
 
-# -- Check dependencies --------------------------------------------------------
+# -- Check dependencies -------------------------------------------------------
 log "Checking dependencies..."
 command -v terraform >/dev/null || err "terraform not found"
 command -v aws       >/dev/null || err "aws cli not found"
 command -v kubectl   >/dev/null || err "kubectl not found"
-aws sts get-caller-identity --region "$AWS_REGION" >/dev/null || err "AWS credentials not configured"
-log "Using region: ${AWS_REGION}"
+aws sts get-caller-identity >/dev/null || err "AWS credentials not configured"
+log "Using profile : ${AWS_PROFILE}"
+log "Using region  : ${AWS_REGION}"
 ok "Dependencies OK"
 
-# -- Step 1: Bootstrap ---------------------------------------------------------
+# -- Step 1: Bootstrap --------------------------------------------------------
 log "Step 1/4: Provisioning bootstrap..."
 cd "$BOOTSTRAP_DIR"
 terraform init -input=false
@@ -34,7 +41,7 @@ BUCKET_REGION=$(terraform output -raw tfstate_region)
 ok "Bootstrap done — bucket: ${BUCKET_NAME}, region: ${BUCKET_REGION}"
 cd - >/dev/null
 
-# -- Step 2: Write backend config ----------------------------------------------
+# -- Step 2: Write backend config ---------------------------------------------
 log "Step 2/4: Configuring remote backend..."
 python3 - <<PYEOF
 import re
@@ -60,7 +67,7 @@ print("Backend config written")
 PYEOF
 ok "Backend config updated"
 
-# -- Step 3: Terraform init with remote backend --------------------------------
+# -- Step 3: Terraform init with remote backend -------------------------------
 log "Step 3/4: Initializing Terraform with remote backend..."
 cd "$TERRAFORM_DIR"
 terraform init \
@@ -72,10 +79,14 @@ terraform init \
   -backend-config="encrypt=true"
 ok "Terraform initialized"
 
-# -- Step 4: Terraform apply ---------------------------------------------------
+# -- Step 4: Terraform apply --------------------------------------------------
 log "Step 4/4: Provisioning infrastructure (EKS ~15-20 min)..."
 [ -f "terraform.tfvars" ] || err "terraform.tfvars not found. Copy terraform.tfvars.example and fill in values."
-terraform apply -input=false -auto-approve
+
+terraform apply -input=false -auto-approve \
+  -var="cockroachdb_connection_string=${DATABASE_URL}" \
+  -var="cockroachdb_mcp_endpoint=${COCKROACHDB_MCP_ENDPOINT}"
+
 ok "Infrastructure provisioned"
 
 EKS_CLUSTER=$(terraform output -raw eks_cluster_name)
@@ -87,6 +98,7 @@ cd - >/dev/null
 echo ""
 echo "===================================================="
 echo "  HiveMind infrastructure ready"
+echo "  Profile : ${AWS_PROFILE}"
 echo "  Cluster : ${EKS_CLUSTER}"
 echo "  Region  : ${BUCKET_REGION}"
 echo "  Next    : bash scripts/deploy.sh"

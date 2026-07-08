@@ -7,7 +7,9 @@ locals {
   }
 }
 
-# ── SNS Topic ─────────────────────────────────────────────────────────────────
+data "aws_region" "current" {}
+
+# -- SNS Topic ----------------------------------------------------------------
 resource "aws_sns_topic" "alerts" {
   name = "${var.project}-${var.environment}-alerts"
   tags = local.common_tags
@@ -19,7 +21,7 @@ resource "aws_sns_topic_subscription" "email" {
   endpoint  = var.alert_email
 }
 
-# ── Billing Alarm ─────────────────────────────────────────────────────────────
+# -- Billing Alarm ------------------------------------------------------------
 resource "aws_cloudwatch_metric_alarm" "billing" {
   alarm_name          = "${var.project}-${var.environment}-billing"
   comparison_operator = "GreaterThanThreshold"
@@ -36,7 +38,7 @@ resource "aws_cloudwatch_metric_alarm" "billing" {
   dimensions = { Currency = "USD" }
 }
 
-# ── EKS Node CPU Alarm ────────────────────────────────────────────────────────
+# -- EKS Node CPU Alarm -------------------------------------------------------
 resource "aws_cloudwatch_metric_alarm" "eks_node_cpu" {
   alarm_name          = "${var.project}-${var.environment}-eks-node-cpu"
   comparison_operator = "GreaterThanThreshold"
@@ -53,7 +55,7 @@ resource "aws_cloudwatch_metric_alarm" "eks_node_cpu" {
   dimensions = { ClusterName = var.eks_cluster_name }
 }
 
-# ── EKS Node Memory Alarm ─────────────────────────────────────────────────────
+# -- EKS Node Memory Alarm ----------------------------------------------------
 resource "aws_cloudwatch_metric_alarm" "eks_node_memory" {
   alarm_name          = "${var.project}-${var.environment}-eks-node-memory"
   comparison_operator = "GreaterThanThreshold"
@@ -70,7 +72,7 @@ resource "aws_cloudwatch_metric_alarm" "eks_node_memory" {
   dimensions = { ClusterName = var.eks_cluster_name }
 }
 
-# ── CloudWatch Dashboard ──────────────────────────────────────────────────────
+# -- CloudWatch Dashboard -----------------------------------------------------
 resource "aws_cloudwatch_dashboard" "hivemind" {
   dashboard_name = "${var.project}-${var.environment}"
 
@@ -85,6 +87,7 @@ resource "aws_cloudwatch_dashboard" "hivemind" {
         properties = {
           title   = "EKS Node CPU Utilization"
           view    = "timeSeries"
+          region  = data.aws_region.current.name
           period  = 60
           metrics = [["ContainerInsights", "node_cpu_utilization", "ClusterName", var.eks_cluster_name, { stat = "Average" }]]
         }
@@ -98,6 +101,7 @@ resource "aws_cloudwatch_dashboard" "hivemind" {
         properties = {
           title   = "EKS Node Memory Utilization"
           view    = "timeSeries"
+          region  = data.aws_region.current.name
           period  = 60
           metrics = [["ContainerInsights", "node_memory_utilization", "ClusterName", var.eks_cluster_name, { stat = "Average" }]]
         }
@@ -111,6 +115,7 @@ resource "aws_cloudwatch_dashboard" "hivemind" {
         properties = {
           title   = "Pod Restart Count"
           view    = "timeSeries"
+          region  = data.aws_region.current.name
           period  = 60
           metrics = [["ContainerInsights", "pod_number_of_container_restarts", "ClusterName", var.eks_cluster_name, { stat = "Sum" }]]
         }
@@ -122,9 +127,10 @@ resource "aws_cloudwatch_dashboard" "hivemind" {
         width  = 12
         height = 6
         properties = {
-          title  = "HiveMind Custom — Agent Verdicts"
-          view   = "timeSeries"
-          period = 60
+          title   = "HiveMind - Agent Verdicts"
+          view    = "timeSeries"
+          region  = data.aws_region.current.name
+          period  = 60
           metrics = [
             ["HiveMind", "AgentVerdicts", "Environment", var.environment, { stat = "Sum", label = "Total Verdicts" }],
             ["HiveMind", "AgentErrors", "Environment", var.environment, { stat = "Sum", label = "Errors", color = "#d62728" }]
@@ -138,9 +144,10 @@ resource "aws_cloudwatch_dashboard" "hivemind" {
         width  = 12
         height = 6
         properties = {
-          title  = "HiveMind Custom — Investigation Latency"
-          view   = "timeSeries"
-          period = 60
+          title   = "HiveMind - Investigation Latency"
+          view    = "timeSeries"
+          region  = data.aws_region.current.name
+          period  = 60
           metrics = [
             ["HiveMind", "InvestigationDuration", "Environment", var.environment, { stat = "p50", label = "p50" }],
             ["HiveMind", "InvestigationDuration", "Environment", var.environment, { stat = "p99", label = "p99" }]
