@@ -22,8 +22,8 @@ from psycopg2.extras import execute_batch
 
 
 # ── Routing thresholds ──────────────────────────────────────
-LOW_THRESHOLD  = 0.001   # < 0.001  → auto approve
-HIGH_THRESHOLD = 0.999   # > 0.999  → auto block
+LOW_THRESHOLD  = 0.3   # < 0.001  → auto approve
+HIGH_THRESHOLD = 0.7  # > 0.999  → auto block
 # 0.001..0.999   → HiveMind agent investigates (~15-25% tổng giao dịch)
 
 
@@ -209,12 +209,24 @@ def build_demo_stream(df: pd.DataFrame, n: int = 500) -> pd.DataFrame:
         case1 = fraud_pool.iloc[0:1].copy()
         case2 = fraud_pool.iloc[1:2].copy()
 
+    # Ép fraud về medium để agent xử lý (PaySim score fraud ≈ 1.0 → auto block)
+    case1['risk_score'] = 0.50
+    case1['risk_tier']  = 'medium'
+    case2['risk_score'] = 0.52
+    case2['risk_tier']  = 'medium'
+
+    # Thêm uncertain cases để fleet có việc làm
+    legit_sample = df[df['isFraud'] == 0].sample(n=20, random_state=42).copy()
+    legit_sample['risk_score'] = np.random.uniform(0.1, 0.8, len(legit_sample))
+    legit_sample['risk_tier']  = 'medium'
+
     # Build stream với controlled insertion points
     stream_parts = []
     stream_parts.append(legit.iloc[:50])    # 0-49: legit
     stream_parts.append(case1)              # 50: fraud pattern lần 1
     stream_parts.append(legit.iloc[50:150]) # 51-149: legit
     stream_parts.append(case2)              # 150: fraud pattern lần 2 (same pattern)
+    stream_parts.append(legit_sample)
     stream_parts.append(legit.iloc[150:])   # 151+: legit
 
     stream = pd.concat(stream_parts, ignore_index=True)
