@@ -78,9 +78,5 @@ hivemind/
     │   ├── hooks/
     │   └── api/                    # fetch từ scoring-api
     └── public/
-→
-→
-```
-→ 
 
-→
+TRUNCATE episodic_memory;

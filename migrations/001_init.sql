@@ -328,6 +328,21 @@ ORDER BY t.verdict, tx.is_fraud_label;
 -- verdict=legit  + label=false → True Negative
 -- verdict=legit  + label=true  → False Negative
 
+CREATE TABLE IF NOT EXISTS episodic_memory (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    transaction_id UUID,
+    summary        TEXT NOT NULL,
+    verdict        STRING NOT NULL,
+    confidence     FLOAT8,
+    rationale      TEXT,
+    embedding      VECTOR(1536),
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT verdict_ck CHECK (verdict IN ('fraud', 'legit', 'escalate'))
+);
+
+CREATE VECTOR INDEX ON episodic_memory (embedding)
+    WHERE embedding IS NOT NULL;
+
 
 -- ============================================================
 -- IMPORTANT QUERIES (copy vào code)
