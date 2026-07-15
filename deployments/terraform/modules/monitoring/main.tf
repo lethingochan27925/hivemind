@@ -38,38 +38,45 @@ resource "aws_cloudwatch_metric_alarm" "billing" {
   dimensions = { Currency = "USD" }
 }
 
-# -- EKS Node CPU Alarm -------------------------------------------------------
-resource "aws_cloudwatch_metric_alarm" "eks_node_cpu" {
-  alarm_name          = "${var.project}-${var.environment}-eks-node-cpu"
+# -- Lambda Errors ------------------------------------------------------------
+resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
+  for_each = var.function_names
+
+  alarm_name          = "${each.value}-errors"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 2
-  metric_name         = "node_cpu_utilization"
-  namespace           = "ContainerInsights"
-  period              = 60
-  statistic           = "Average"
-  threshold           = 80
-  alarm_description   = "EKS node CPU > 80%"
+  evaluation_periods  = 1
+  metric_name         = "Errors"
+  namespace           = "AWS/Lambda"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = var.error_threshold
+  alarm_description   = "${each.value} errors > ${var.error_threshold} / 5min"
   alarm_actions       = [aws_sns_topic.alerts.arn]
+  treat_missing_data  = "notBreaching"
   tags                = local.common_tags
 
-  dimensions = { ClusterName = var.eks_cluster_name }
+  dimensions = { FunctionName = each.value }
 }
 
-# -- EKS Node Memory Alarm ----------------------------------------------------
-resource "aws_cloudwatch_metric_alarm" "eks_node_memory" {
-  alarm_name          = "${var.project}-${var.environment}-eks-node-memory"
+# -- Lambda Throttles ---------------------------------------------------------
+# Worker bi throttle = reserved_concurrency qua thap so voi tai.
+resource "aws_cloudwatch_metric_alarm" "lambda_throttles" {
+  for_each = var.function_names
+
+  alarm_name          = "${each.value}-throttles"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 2
-  metric_name         = "node_memory_utilization"
-  namespace           = "ContainerInsights"
-  period              = 60
-  statistic           = "Average"
-  threshold           = 80
-  alarm_description   = "EKS node memory > 80%"
+  evaluation_periods  = 1
+  metric_name         = "Throttles"
+  namespace           = "AWS/Lambda"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 0
+  alarm_description   = "${each.value} bi throttle -- kiem tra reserved concurrency"
   alarm_actions       = [aws_sns_topic.alerts.arn]
+  treat_missing_data  = "notBreaching"
   tags                = local.common_tags
 
-  dimensions = { ClusterName = var.eks_cluster_name }
+  dimensions = { FunctionName = each.value }
 }
 
 # -- CloudWatch Dashboard -----------------------------------------------------
@@ -82,42 +89,34 @@ resource "aws_cloudwatch_dashboard" "hivemind" {
         type   = "metric"
         x      = 0
         y      = 0
-        width  = 8
+        width  = 12
         height = 6
         properties = {
-          title   = "EKS Node CPU Utilization"
-          view    = "timeSeries"
-          region  = data.aws_region.current.name
-          period  = 60
-          metrics = [["ContainerInsights", "node_cpu_utilization", "ClusterName", var.eks_cluster_name, { stat = "Average" }]]
+          title  = "Fleet Invocations"
+          view   = "timeSeries"
+          region = data.aws_region.current.name
+          period = 60
+          metrics = [
+            for k, name in var.function_names :
+            ["AWS/Lambda", "Invocations", "FunctionName", name, { stat = "Sum", label = k }]
+          ]
         }
       },
       {
         type   = "metric"
-        x      = 8
+        x      = 12
         y      = 0
-        width  = 8
+        width  = 12
         height = 6
         properties = {
-          title   = "EKS Node Memory Utilization"
-          view    = "timeSeries"
-          region  = data.aws_region.current.name
-          period  = 60
-          metrics = [["ContainerInsights", "node_memory_utilization", "ClusterName", var.eks_cluster_name, { stat = "Average" }]]
-        }
-      },
-      {
-        type   = "metric"
-        x      = 16
-        y      = 0
-        width  = 8
-        height = 6
-        properties = {
-          title   = "Pod Restart Count"
-          view    = "timeSeries"
-          region  = data.aws_region.current.name
-          period  = 60
-          metrics = [["ContainerInsights", "pod_number_of_container_restarts", "ClusterName", var.eks_cluster_name, { stat = "Sum" }]]
+          title  = "Fleet Errors"
+          view   = "timeSeries"
+          region = data.aws_region.current.name
+          period = 60
+          metrics = [
+            for k, name in var.function_names :
+            ["AWS/Lambda", "Errors", "FunctionName", name, { stat = "Sum", label = k }]
+          ]
         }
       },
       {
@@ -127,13 +126,13 @@ resource "aws_cloudwatch_dashboard" "hivemind" {
         width  = 12
         height = 6
         properties = {
-          title   = "HiveMind - Agent Verdicts"
-          view    = "timeSeries"
-          region  = data.aws_region.current.name
-          period  = 60
+          title  = "Agent Worker Duration"
+          view   = "timeSeries"
+          region = data.aws_region.current.name
+          period = 60
           metrics = [
-            ["HiveMind", "AgentVerdicts", "Environment", var.environment, { stat = "Sum", label = "Total Verdicts" }],
-            ["HiveMind", "AgentErrors", "Environment", var.environment, { stat = "Sum", label = "Errors", color = "#d62728" }]
+            ["AWS/Lambda", "Duration", "FunctionName", var.function_names["agent-worker"], { stat = "p50", label = "p50" }],
+            ["AWS/Lambda", "Duration", "FunctionName", var.function_names["agent-worker"], { stat = "p99", label = "p99" }]
           ]
         }
       },
@@ -144,13 +143,48 @@ resource "aws_cloudwatch_dashboard" "hivemind" {
         width  = 12
         height = 6
         properties = {
-          title   = "HiveMind - Investigation Latency"
-          view    = "timeSeries"
-          region  = data.aws_region.current.name
-          period  = 60
+          title  = "Agent Worker Concurrency"
+          view   = "timeSeries"
+          region = data.aws_region.current.name
+          period = 60
           metrics = [
-            ["HiveMind", "InvestigationDuration", "Environment", var.environment, { stat = "p50", label = "p50" }],
-            ["HiveMind", "InvestigationDuration", "Environment", var.environment, { stat = "p99", label = "p99" }]
+            ["AWS/Lambda", "ConcurrentExecutions", "FunctionName", var.function_names["agent-worker"], { stat = "Maximum" }],
+            ["AWS/Lambda", "Throttles", "FunctionName", var.function_names["agent-worker"], { stat = "Sum", color = "#d62728" }]
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 12
+        width  = 12
+        height = 6
+        properties = {
+          title  = "HiveMind - Agent Verdicts"
+          view   = "timeSeries"
+          region = data.aws_region.current.name
+          period = 60
+          metrics = [
+            [var.metrics_namespace, "AgentVerdicts", "Environment", var.environment, { stat = "Sum", label = "Verdicts" }],
+            [var.metrics_namespace, "MemoryHits", "Environment", var.environment, { stat = "Sum", label = "Memory recalls" }],
+            [var.metrics_namespace, "TasksRequeued", "Environment", var.environment, { stat = "Sum", label = "Re-queued", color = "#ff7f0e" }]
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 12
+        width  = 12
+        height = 6
+        properties = {
+          title  = "HiveMind - Investigation Latency"
+          view   = "timeSeries"
+          region = data.aws_region.current.name
+          period = 60
+          metrics = [
+            [var.metrics_namespace, "InvestigationDuration", "Environment", var.environment, { stat = "p50", label = "p50" }],
+            [var.metrics_namespace, "InvestigationDuration", "Environment", var.environment, { stat = "p99", label = "p99" }]
           ]
         }
       }

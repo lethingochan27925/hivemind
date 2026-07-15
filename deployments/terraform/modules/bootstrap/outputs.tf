@@ -15,7 +15,7 @@ output "tfstate_region" {
 
 output "backend_config_snippet" {
   description = "Copy snippet này vào versions.tf backend block của root module"
-  value = <<-EOT
+  value       = <<-EOT
     backend "s3" {
       bucket         = "${aws_s3_bucket.tfstate.bucket}"
       key            = "${var.project}/${var.environment}/terraform.tfstate"

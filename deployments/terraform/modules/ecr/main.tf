@@ -1,6 +1,8 @@
-locals {
-  repositories = ["agent-worker", "scoring-api", "dispatcher", "dashboard"]
+# Repo "dashboard" da bo: dashboard la static site -> S3 + CloudFront
+# (module storage), khong can container image.
+# Repo "reaper" duoc them: reaper chay nhu 1 Lambda rieng.
 
+locals {
   common_tags = {
     Project     = var.project
     Environment = var.environment
@@ -10,7 +12,7 @@ locals {
 }
 
 resource "aws_ecr_repository" "services" {
-  for_each = toset(local.repositories)
+  for_each = toset(var.repositories)
 
   name                 = "${var.project}/${var.environment}/${each.key}"
   image_tag_mutability = "MUTABLE"
@@ -33,11 +35,11 @@ resource "aws_ecr_lifecycle_policy" "services" {
   policy = jsonencode({
     rules = [{
       rulePriority = 1
-      description  = "Keep last 10 images"
+      description  = "Keep last ${var.image_retention_count} images"
       selection = {
         tagStatus   = "any"
         countType   = "imageCountMoreThan"
-        countNumber = 10
+        countNumber = var.image_retention_count
       }
       action = { type = "expire" }
     }]

@@ -12,3 +12,14 @@ variable "environment" {
     error_message = "environment must be one of: dev, demo, prod"
   }
 }
+
+variable "repositories" {
+  description = "Danh sach repo can tao — nhan tu root de dong bo voi Lambda/IAM"
+  type        = list(string)
+}
+
+variable "image_retention_count" {
+  description = "So image giu lai moi repo"
+  type        = number
+  default     = 10
+}
