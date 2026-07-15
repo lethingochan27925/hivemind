@@ -81,6 +81,7 @@ FETCH_QUERY = """
     LEFT JOIN tasks tk
         ON tk.transaction_id = t.id
     WHERE tk.transaction_id IS NULL
+      AND t.risk_tier = 'medium'
     ORDER BY t.arrived_at
     LIMIT %s
 """

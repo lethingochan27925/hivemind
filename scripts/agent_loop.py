@@ -147,6 +147,31 @@ def write_audit_log(cur, txn: dict, task: dict, verdict: str,
 # REASONING — Claude Haiku
 # ===========================================================================
 
+# def build_prompt(txn: dict, memory_hits: list) -> str:
+#     """Xây dựng prompt cho Claude Haiku."""
+#     memory_context = ""
+#     if memory_hits:
+#         cases = "\n".join([
+#             f"  - verdict={h['verdict']} confidence={h['confidence']:.2f}: {h['rationale']}"
+#             for h in memory_hits
+#         ])
+#         memory_context = f"\nSimilar past cases:\n{cases}\n"
+
+#     return f"""You are a fraud investigation agent. Analyze this transaction and give a verdict.
+
+# Transaction:
+#   type={txn.get('type','?')}
+#   amount={float(txn.get('amount',0)):.2f}
+#   risk_score={float(txn.get('risk_score',0)):.3f}
+#   error_balance_orig={float(txn.get('error_balance_orig',0)):.2f}
+#   error_balance_dest={float(txn.get('error_balance_dest',0)):.2f}
+# {memory_context}
+# Respond in JSON only:
+# {{
+#   "verdict": "fraud" | "escalate" | "legit",
+#   "confidence": 0.0-1.0,
+#   "rationale": "one sentence explanation"
+# }}"""
 def build_prompt(txn: dict, memory_hits: list) -> str:
     """Xây dựng prompt cho Claude Haiku."""
     memory_context = ""
@@ -155,9 +180,9 @@ def build_prompt(txn: dict, memory_hits: list) -> str:
             f"  - verdict={h['verdict']} confidence={h['confidence']:.2f}: {h['rationale']}"
             for h in memory_hits
         ])
-        memory_context = f"\nSimilar past cases:\n{cases}\n"
+        memory_context = f"\nSimilar past cases (reference only, do NOT anchor to these):\n{cases}\n"
 
-    return f"""You are a fraud investigation agent. Analyze this transaction and give a verdict.
+    return f"""You are a fraud investigation agent. Analyze this transaction independently.
 
 Transaction:
   type={txn.get('type','?')}
@@ -166,6 +191,11 @@ Transaction:
   error_balance_orig={float(txn.get('error_balance_orig',0)):.2f}
   error_balance_dest={float(txn.get('error_balance_dest',0)):.2f}
 {memory_context}
+Scoring rules (follow strictly):
+- risk_score < 0.30 AND both errors near 0 → legit
+- risk_score 0.30-0.60 AND uncertain signals → escalate
+- risk_score > 0.60 OR large error_balance → fraud
+
 Respond in JSON only:
 {{
   "verdict": "fraud" | "escalate" | "legit",
@@ -197,6 +227,7 @@ def call_claude(txn: dict, memory_hits: list) -> dict:
 
         assert result["verdict"] in ("fraud", "escalate", "legit")
         assert 0.0 <= float(result["confidence"]) <= 1.0
+        time.sleep(0.5)
         return {
             "verdict": result["verdict"],
             "confidence": float(result["confidence"]),

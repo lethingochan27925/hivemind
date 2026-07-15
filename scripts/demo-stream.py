@@ -22,8 +22,8 @@ from psycopg2.extras import execute_batch
 
 
 # ── Routing thresholds ──────────────────────────────────────
-LOW_THRESHOLD  = 0.3   # < 0.001  → auto approve
-HIGH_THRESHOLD = 0.7  # > 0.999  → auto block
+LOW_THRESHOLD  = 0.001  # < 0.001 → low (auto approve)
+HIGH_THRESHOLD = 0.999  # > 0.999 → high (auto block)
 # 0.001..0.999   → HiveMind agent investigates (~15-25% tổng giao dịch)
 
 
