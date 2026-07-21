@@ -1,7 +1,8 @@
 """
 agent_loop.py — HiveMind Agent Worker
 Flow: claim task -> input validation -> vector recall (case_memory)
-      -> reason (Claude Haiku) -> verdict -> write case_memory -> audit_log
+      -> MCP customer context -> reason (Claude Haiku) -> verdict
+      -> write case_memory -> audit_log
 """
 
 import os
@@ -14,6 +15,8 @@ import boto3
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
+
+from mcp_client import build_mcp_tools, MCPError
 
 load_dotenv(".env")
 
@@ -36,6 +39,8 @@ bedrock_embed = boto3.client(
     aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
     aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
 )
+
+mcp_tools = build_mcp_tools()
 
 
 def sanitize_field(value: str, max_len: int = 64) -> str:
@@ -107,6 +112,25 @@ def retrieve_case_memory(cur, txn: dict, top_k: int = 3) -> list:
         return hits
     except Exception as e:
         print(f"  [memory] retrieve error: {e}")
+        return []
+
+
+def retrieve_customer_context(txn: dict) -> list:
+    """
+    Lay lich su khach hang qua MCP Server (read-only tool).
+    Chay song song voi vector recall — bo sung ngu canh khac loai.
+    Neu MCP loi/timeout, tra ve [] va agent van chay tiep bang vector memory.
+    """
+    name_orig = txn.get("name_orig")
+    if not name_orig:
+        return []
+    try:
+        return mcp_tools.get_customer_context(name_orig, limit=5)
+    except MCPError as e:
+        print(f"  [mcp] customer context error (bo qua, van tiep tuc): {e}")
+        return []
+    except Exception as e:
+        print(f"  [mcp] unexpected error (bo qua, van tiep tuc): {e}")
         return []
 
 
@@ -202,7 +226,7 @@ def write_audit_log(cur, txn: dict, task: dict, action: str,
     ))
 
 
-def build_prompt(txn: dict, memory_hits: list) -> str:
+def build_prompt(txn: dict, memory_hits: list, customer_history: list) -> str:
     memory_context = ""
     if memory_hits:
         cases = "\n".join([
@@ -210,6 +234,15 @@ def build_prompt(txn: dict, memory_hits: list) -> str:
             for h in memory_hits
         ])
         memory_context = f"\nSimilar past cases (reference only, do NOT anchor to these):\n{cases}\n"
+
+    customer_context = ""
+    if customer_history:
+        history_lines = "\n".join([
+            f"  - {h.get('type','?')} amount={h.get('amount','?')} "
+            f"verdict={h.get('verdict','pending')} risk={h.get('risk_score','?')}"
+            for h in customer_history
+        ])
+        customer_context = f"\nThis customer's recent transaction history:\n{history_lines}\n"
 
     name_orig = sanitize_field(txn.get("name_orig", ""))
     name_dest = sanitize_field(txn.get("name_dest", ""))
@@ -224,7 +257,7 @@ Transaction:
   risk_score={float(txn.get('risk_score',0)):.3f}
   error_balance_orig={float(txn.get('error_balance_orig',0)):.2f}
   error_balance_dest={float(txn.get('error_balance_dest',0)):.2f}
-{memory_context}
+{memory_context}{customer_context}
 Scoring rules (follow strictly):
 - risk_score < 0.30 AND both errors near 0 -> legit
 - risk_score 0.30-0.60 AND uncertain signals -> escalate
@@ -238,8 +271,8 @@ Respond in JSON only:
 }}"""
 
 
-def call_claude(txn: dict, memory_hits: list) -> dict:
-    prompt = build_prompt(txn, memory_hits)
+def call_claude(txn: dict, memory_hits: list, customer_history: list) -> dict:
+    prompt = build_prompt(txn, memory_hits, customer_history)
     start = time.monotonic()
     try:
         response = bedrock.invoke_model(
@@ -303,7 +336,7 @@ def connect():
 
 def run():
     conn = connect()
-    print(f"[{WORKER_ID}] Worker started (Bedrock Claude Haiku + Titan Embeddings v2)")
+    print(f"[{WORKER_ID}] Worker started (Bedrock Claude Haiku + Titan Embeddings v2 + MCP)")
 
     while True:
         try:
@@ -353,7 +386,14 @@ def run():
             write_audit_log(cur, txn, dict(task), "memory_recall", memory_hits=memory_hits)
             print(f"  Memory hits: {len(memory_hits)}")
 
-            result = call_claude(txn, memory_hits)
+            customer_history = retrieve_customer_context(txn)
+            write_audit_log(
+                cur, txn, dict(task), "mcp_query",
+                reasoning=f"customer_history_count={len(customer_history)}",
+            )
+            print(f"  Customer history (MCP): {len(customer_history)} past transactions")
+
+            result = call_claude(txn, memory_hits, customer_history)
             write_audit_log(
                 cur, txn, dict(task), "bedrock_reasoning",
                 reasoning=result["rationale"],
