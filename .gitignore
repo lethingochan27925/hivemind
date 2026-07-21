@@ -3,7 +3,6 @@ data/raw/
 data/processed/
 *.pkl
 *.joblib
-
 *.csv
 
 # Environment
@@ -30,5 +29,4 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# Backup
-*.csv
+
