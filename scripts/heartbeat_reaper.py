@@ -1,11 +1,7 @@
 """
 heartbeat_reaper.py — HiveMind Heartbeat Reaper
-
-Vai trò: phát hiện agent worker bị crash (không update heartbeat)
-và re-queue các task bị stuck ở trạng thái 'investigating'.
-
-Chạy dạng long-running process song song với dispatcher và agent_loop.
-Ctrl+C để dừng an toàn.
+Phat hien agent worker crash (khong update heartbeat), re-queue task
+'investigating' bi stuck. Giu nguyen step/scratchpad de agent khac resume.
 """
 
 import os
@@ -18,9 +14,9 @@ from dotenv import load_dotenv
 
 load_dotenv(".env")
 
-DATABASE_URL     = os.environ["DATABASE_URL"]
-REAP_INTERVAL    = int(os.environ.get("REAPER_INTERVAL_SECONDS", 10))
-STUCK_THRESHOLD  = os.environ.get("REAPER_STUCK_THRESHOLD", "30s")
+DATABASE_URL    = os.environ["DATABASE_URL"]
+REAP_INTERVAL   = int(os.environ.get("REAPER_INTERVAL_SECONDS", 10))
+STUCK_THRESHOLD = os.environ.get("REAPER_STUCK_THRESHOLD", "30s")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,7 +29,7 @@ _shutdown = False
 
 def _handle_shutdown(signum, frame):
     global _shutdown
-    log.info("Nhận tín hiệu dừng (%s) — sẽ thoát sau chu kỳ hiện tại...", signum)
+    log.info("Nhan tin hieu dung (%s) — se thoat sau chu ky hien tai...", signum)
     _shutdown = True
 
 
@@ -48,44 +44,43 @@ def connect_with_retry(max_attempts=5, base_delay=1.0):
         try:
             conn = psycopg2.connect(DATABASE_URL)
             conn.autocommit = False
-            log.info("Đã kết nối CockroachDB.")
+            log.info("Da ket noi CockroachDB.")
             return conn
         except psycopg2.OperationalError as e:
             if attempt >= max_attempts:
                 raise
             delay = base_delay * (2 ** (attempt - 1))
             log.warning(
-                "Kết nối thất bại (lần %d/%d): %s — thử lại sau %.1fs",
+                "Ket noi that bai (lan %d/%d): %s — thu lai sau %.1fs",
                 attempt, max_attempts, e, delay,
             )
             time.sleep(delay)
 
 
-def reap_stuck_tasks(conn) -> int:
+def reap_stuck_tasks(conn):
     """
-    Tìm các task đang 'investigating' nhưng heartbeat quá cũ
-    → reset về 'pending' để agent khác claim lại.
-
-    Đây là cơ chế self-healing của fleet:
-    - Agent crash / bị kill → không update heartbeat
-    - Reaper phát hiện sau STUCK_THRESHOLD giây
-    - Task được re-queue → agent khác pick up
-    - Không mất data, không cần manual intervention
+    Re-queue task 'investigating' bi stuck ve 'pending'.
+    Khong xoa step/scratchpad — agent moi doc lai de resume dung buoc.
     """
     with conn.cursor() as cur:
         cur.execute(f"""
             UPDATE tasks
-            SET
-                status       = 'pending',
+            SET status       = 'pending',
                 claimed_by   = NULL,
                 claimed_at   = NULL,
                 heartbeat_at = NULL
-            WHERE
-                status = 'investigating'
-                AND heartbeat_at < NOW() - INTERVAL '{STUCK_THRESHOLD}'
-            RETURNING id, claimed_by
+            WHERE status = 'investigating'
+              AND heartbeat_at < NOW() - INTERVAL '{STUCK_THRESHOLD}'
+            RETURNING id, claimed_by, transaction_id
         """)
         reaped = cur.fetchall()
+
+        for task_id, worker_id, txn_id in reaped:
+            cur.execute("""
+                INSERT INTO audit_log (task_id, transaction_id, agent_id, action, reasoning, created_at)
+                VALUES (%s, %s, %s, 'task_requeued', %s, now())
+            """, (task_id, txn_id, worker_id or 'unknown', f"Stuck > {STUCK_THRESHOLD}, re-queued"))
+
     conn.commit()
     return len(reaped), reaped
 
@@ -93,7 +88,7 @@ def reap_stuck_tasks(conn) -> int:
 def main():
     conn = connect_with_retry()
     log.info(
-        "Heartbeat Reaper bắt đầu (interval=%ds, threshold=%s).",
+        "Heartbeat Reaper bat dau (interval=%ds, threshold=%s).",
         REAP_INTERVAL, STUCK_THRESHOLD,
     )
 
@@ -101,17 +96,14 @@ def main():
         try:
             count, reaped = reap_stuck_tasks(conn)
             if count > 0:
-                for task_id, worker_id in reaped:
-                    log.warning(
-                        "Re-queued stuck task %s (worker=%s)",
-                        task_id, worker_id,
-                    )
-                log.info("Reaped %d stuck task(s) → re-queued as pending.", count)
+                for task_id, worker_id, txn_id in reaped:
+                    log.warning("Re-queued stuck task %s (worker=%s)", task_id, worker_id)
+                log.info("Reaped %d stuck task(s) -> re-queued as pending.", count)
             else:
                 log.debug("No stuck tasks found.")
 
         except psycopg2.Error as e:
-            log.error("Lỗi DB: %s", e)
+            log.error("Loi DB: %s", e)
             conn.rollback()
             try:
                 conn.close()
@@ -122,7 +114,7 @@ def main():
         time.sleep(REAP_INTERVAL)
 
     conn.close()
-    log.info("Heartbeat Reaper đã dừng.")
+    log.info("Heartbeat Reaper da dung.")
 
 
 if __name__ == "__main__":

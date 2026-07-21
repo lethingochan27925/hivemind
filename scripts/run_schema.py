@@ -2,7 +2,8 @@ import os
 from dotenv import load_dotenv
 import psycopg2
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
-load_dotenv('.env.example')
+
+load_dotenv('.env')
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 
@@ -15,5 +16,5 @@ with open('migrations/001_init.sql', 'r', encoding='utf-8') as f:
 with conn.cursor() as cur:
     cur.execute(sql)
 
-print("✅ Đã chạy schema thành công!")
+print("[DONE] Da chay schema thanh cong!")
 conn.close()
