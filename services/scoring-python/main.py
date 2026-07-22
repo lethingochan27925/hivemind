@@ -61,3 +61,9 @@ def score(req: ScoreRequest):
 @app.get("/health")
 def health():
     return {"status": "ok", "model_loaded": model is not None}
+
+try:
+    from mangum import Mangum
+    handler = Mangum(app)
+except ImportError:
+    pass
