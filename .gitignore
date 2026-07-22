@@ -31,3 +31,24 @@ __pycache__/
 Thumbs.db
 
 
+
+# IDE
+.vscode/
+.idea/
+
+# Go binaries
+bin/
+/worker
+/dispatcher
+/heartbeat-reaper
+/scoring-api
+
+# Backup CSV exports
+backup_*.csv
+
+# Python venv (bo sung day du, .venv da co nhung them venv/ phong khi dat ten khac)
+venv/
+*.egg-info/
+
+# Logs
+*.log
