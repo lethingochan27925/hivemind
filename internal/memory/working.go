@@ -88,3 +88,17 @@ func FailTask(ctx context.Context, db *cockroach.Client, taskID string) error {
 	}
 	return nil
 }
+
+// SaveScratchpad ghi checkpoint (step + scratchpad) de agent khac co the
+// resume dung cho neu task nay bi crash va duoc re-queue.
+func SaveScratchpad(ctx context.Context, db *cockroach.Client, taskID, step string, scratchpad []byte) error {
+	_, err := db.Pool.Exec(ctx, `
+		UPDATE tasks
+		SET step = $1, scratchpad = $2, heartbeat_at = NOW()
+		WHERE id = $3
+	`, step, scratchpad, taskID)
+	if err != nil {
+		return fmt.Errorf("saving scratchpad: %w", err)
+	}
+	return nil
+}

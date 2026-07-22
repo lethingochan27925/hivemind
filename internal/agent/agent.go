@@ -1,8 +1,10 @@
 // agent.go: vong lap chinh cua worker - claim, recall, reason, verdict, ghi memory.
+// Ghi scratchpad sau moi buoc de resume dung cho neu bi crash giua chung.
 package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"time"
@@ -57,73 +59,235 @@ func (w *Worker) Run(ctx context.Context) error {
 		}
 
 		fmt.Printf("Claimed task %s\n", task.ID)
-
-		txn, err := w.mcp.GetTransaction(task.TransactionID)
-		if err != nil {
-			fmt.Printf("  [error] GetTransaction failed: %v\n", err)
-			memory.FailTask(ctx, w.db, task.ID)
-			continue
-		}
-		if txn == nil {
-			fmt.Printf("  [error] Transaction %s not found\n", task.TransactionID)
-			memory.FailTask(ctx, w.db, task.ID)
-			continue
-		}
-
-		if txn.RiskScore() < scorer.LowThreshold {
-			w.autoDecide(ctx, task.ID, txn, "legit", "auto_approve")
-			continue
-		}
-		if txn.RiskScore() > scorer.HighThreshold {
-			w.autoDecide(ctx, task.ID, txn, "fraud", "auto_block")
-			continue
-		}
-
-		embedding, err := w.bedrock.EmbedText(ctx, buildCaseSummary(txn))
-		var memoryHits []memory.CaseMemoryHit
-		if err != nil {
-			fmt.Printf("  [warn] EmbedText failed: %v\n", err)
-		} else {
-			embeddingStr := cockroach.EncodeVector(embedding)
-			memoryHits, err = memory.RetrieveCaseMemory(ctx, w.db, embeddingStr, txn.Type, 3)
-			if err != nil {
-				fmt.Printf("  [warn] RetrieveCaseMemory failed: %v\n", err)
-			}
-		}
-		fmt.Printf("  Memory hits: %d\n", len(memoryHits))
-
-		customerHistory, err := w.mcp.GetCustomerContext(txn.NameOrig, 5)
-		if err != nil {
-			fmt.Printf("  [warn] GetCustomerContext failed: %v\n", err)
-			customerHistory = nil
-		}
-		fmt.Printf("  Customer history (MCP): %d past transactions\n", len(customerHistory))
-
-		memoryTexts := formatMemoryHits(memoryHits)
-		customerTexts := formatCustomerHistory(customerHistory)
-
-		result := CallClaude(ctx, w.bedrock, txn, memoryTexts, customerTexts)
-
-		newStatus := "done"
-		if result.Verdict == "escalate" {
-			newStatus = "pending_review"
-		}
-
-		if err := memory.CompleteTask(ctx, w.db, task.ID, newStatus, result.Verdict, result.Step, result.Confidence); err != nil {
-			fmt.Printf("  [error] CompleteTask failed: %v\n", err)
-			continue
-		}
-
-		fmt.Printf("  Done | risk=%.6f | verdict=%s | confidence=%.2f | status=%s\n",
-			txn.RiskScore(), result.Verdict, result.Confidence, newStatus)
+		w.processTask(ctx, task)
 	}
 }
 
-func (w *Worker) autoDecide(ctx context.Context, taskID string, txn *mcp.Transaction, verdict, action string) {
+func (w *Worker) processTask(ctx context.Context, task *memory.Task) {
+	sp, err := ParseScratchpad(task.Scratchpad)
+	if err != nil {
+		fmt.Printf("  [warn] parsing scratchpad failed, starting fresh: %v\n", err)
+		sp = &Scratchpad{}
+	}
+	resuming := task.Step != nil && *task.Step != ""
+	if resuming {
+		fmt.Printf("  Resuming from step=%s (retry_count=%d)\n", *task.Step, sp.RetryCount)
+		sp.RetryCount++
+	}
+
+	txn, err := w.mcp.GetTransaction(task.TransactionID)
+	if err != nil {
+		fmt.Printf("  [error] GetTransaction failed: %v\n", err)
+		memory.FailTask(ctx, w.db, task.ID)
+		return
+	}
+	if txn == nil {
+		fmt.Printf("  [error] Transaction %s not found\n", task.TransactionID)
+		memory.FailTask(ctx, w.db, task.ID)
+		return
+	}
+
+	if txn.RiskScore() < scorer.LowThreshold {
+		w.autoDecide(ctx, task.ID, task.TransactionID, txn, "legit", "auto_approve")
+		return
+	}
+	if txn.RiskScore() > scorer.HighThreshold {
+		w.autoDecide(ctx, task.ID, task.TransactionID, txn, "fraud", "auto_block")
+		return
+	}
+
+	memoryHits := w.stepMemoryRecall(ctx, task.ID, txn, resuming, sp)
+	customerHistory := w.stepCustomerContext(ctx, task.ID, task.TransactionID, txn, resuming, sp)
+
+	memoryTexts := formatMemoryHits(memoryHits)
+	customerTexts := formatCustomerHistory(customerHistory)
+	result := CallClaude(ctx, w.bedrock, txn, memoryTexts, customerTexts)
+
+	sp.PartialReasoning = result.Rationale
+	w.saveCheckpoint(ctx, task.ID, "reasoned", sp)
+
+	memory.WriteAuditLog(ctx, w.db, memory.AuditEntry{
+		TaskID:        task.ID,
+		TransactionID: task.TransactionID,
+		AgentID:       w.ID,
+		Action:        "bedrock_reasoning",
+		Reasoning:     &result.Rationale,
+		TokensIn:      result.TokensIn,
+		TokensOut:     result.TokensOut,
+		BedrockModel:  &w.bedrock.ClaudeModelID,
+		LatencyMs:     &result.LatencyMs,
+	})
+
+	newStatus := "done"
+	if result.Verdict == "escalate" {
+		newStatus = "pending_review"
+	}
+
+	if err := memory.CompleteTask(ctx, w.db, task.ID, newStatus, result.Verdict, "done", result.Confidence); err != nil {
+		fmt.Printf("  [error] CompleteTask failed: %v\n", err)
+		return
+	}
+
+	w.writeCaseMemoryAndAudit(ctx, txn, task.ID, task.TransactionID, result)
+
+	verdictAction := fmt.Sprintf("verdict_%s", result.Verdict)
+	memory.WriteAuditLog(ctx, w.db, memory.AuditEntry{
+		TaskID:        task.ID,
+		TransactionID: task.TransactionID,
+		AgentID:       w.ID,
+		Action:        verdictAction,
+		Reasoning:     &result.Rationale,
+	})
+
+	fmt.Printf("  Done | risk=%.6f | verdict=%s | confidence=%.2f | status=%s\n",
+		txn.RiskScore(), result.Verdict, result.Confidence, newStatus)
+}
+
+// stepMemoryRecall la checkpoint 1: vector recall tu case_memory.
+// Neu dang resume va scratchpad da co ket qua buoc nay, dung lai, khong goi lai Bedrock/DB.
+func (w *Worker) stepMemoryRecall(ctx context.Context, taskID string, txn *mcp.Transaction, resuming bool, sp *Scratchpad) []memory.CaseMemoryHit {
+	var memoryHits []memory.CaseMemoryHit
+
+	if resuming && sp.TopKCases != nil {
+		json.Unmarshal(sp.TopKCases, &memoryHits)
+		fmt.Printf("  Memory hits (resumed): %d\n", len(memoryHits))
+		return memoryHits
+	}
+
+	embedding, err := w.bedrock.EmbedText(ctx, buildCaseSummary(txn))
+	if err != nil {
+		fmt.Printf("  [warn] EmbedText failed: %v\n", err)
+	} else {
+		embeddingStr := cockroach.EncodeVector(embedding)
+		memoryHits, err = memory.RetrieveCaseMemory(ctx, w.db, embeddingStr, txn.Type, 3)
+		if err != nil {
+			fmt.Printf("  [warn] RetrieveCaseMemory failed: %v\n", err)
+		}
+	}
+	fmt.Printf("  Memory hits: %d\n", len(memoryHits))
+
+	hitsJSON, _ := json.Marshal(memoryHits)
+	sp.TopKCases = hitsJSON
+	w.saveCheckpoint(ctx, taskID, "memory_recalled", sp)
+
+	memory.WriteAuditLog(ctx, w.db, memory.AuditEntry{
+		TaskID:        taskID,
+		TransactionID: txn.ID,
+		AgentID:       w.ID,
+		Action:        "memory_recall",
+	})
+
+	return memoryHits
+}
+
+// stepCustomerContext la checkpoint 2: query lich su khach hang qua MCP.
+func (w *Worker) stepCustomerContext(ctx context.Context, taskID, transactionID string, txn *mcp.Transaction, resuming bool, sp *Scratchpad) []mcp.CustomerHistoryRow {
+	var customerHistory []mcp.CustomerHistoryRow
+
+	if resuming && sp.MCPResult != nil {
+		json.Unmarshal(sp.MCPResult, &customerHistory)
+		fmt.Printf("  Customer history (resumed): %d past transactions\n", len(customerHistory))
+		return customerHistory
+	}
+
+	var err error
+	customerHistory, err = w.mcp.GetCustomerContext(txn.NameOrig, 5)
+	if err != nil {
+		fmt.Printf("  [warn] GetCustomerContext failed: %v\n", err)
+		customerHistory = nil
+	}
+	fmt.Printf("  Customer history (MCP): %d past transactions\n", len(customerHistory))
+
+	mcpJSON, _ := json.Marshal(customerHistory)
+	sp.MCPResult = mcpJSON
+	w.saveCheckpoint(ctx, taskID, "mcp_queried", sp)
+
+	memory.WriteAuditLog(ctx, w.db, memory.AuditEntry{
+		TaskID:        taskID,
+		TransactionID: transactionID,
+		AgentID:       w.ID,
+		Action:        "mcp_query",
+	})
+
+	return customerHistory
+}
+
+func (w *Worker) saveCheckpoint(ctx context.Context, taskID, step string, sp *Scratchpad) {
+	encoded, err := sp.Encode()
+	if err != nil {
+		fmt.Printf("  [warn] encoding scratchpad failed: %v\n", err)
+		return
+	}
+	if err := memory.SaveScratchpad(ctx, w.db, taskID, step, encoded); err != nil {
+		fmt.Printf("  [warn] saving scratchpad failed: %v\n", err)
+	}
+}
+
+func (w *Worker) writeCaseMemoryAndAudit(ctx context.Context, txn *mcp.Transaction, taskID, transactionID string, result ReasoningResult) {
+	pattern := classifyPattern(txn)
+	summary := fmt.Sprintf(
+		"type=%s amount=%.2f error_orig=%.2f error_dest=%.2f. Verdict: %s. %s",
+		txn.Type, txn.Amount, txn.ErrorBalanceOrig, txn.ErrorBalanceDest,
+		result.Verdict, result.Rationale,
+	)
+
+	embedding, err := w.bedrock.EmbedText(ctx, summary)
+	if err != nil {
+		fmt.Printf("  [warn] EmbedText for case_memory failed: %v\n", err)
+		return
+	}
+	embeddingStr := cockroach.EncodeVector(embedding)
+
+	keySignals := []string{}
+	if pattern != "unclassified" {
+		keySignals = append(keySignals, pattern)
+	}
+
+	err = memory.WriteCaseMemory(ctx, w.db, memory.NewCase{
+		Summary:         summary,
+		Verdict:         result.Verdict,
+		ConfidenceAvg:   result.Confidence,
+		PatternType:     pattern,
+		KeySignals:      keySignals,
+		TransactionType: txn.Type,
+		AmountRange:     memory.AmountRange(txn.Amount),
+		ErrorOrigSign:   memory.SignLabel(txn.ErrorBalanceOrig),
+		ErrorDestSign:   memory.SignLabel(txn.ErrorBalanceDest),
+		EmbeddingStr:    embeddingStr,
+		SourceTaskID:    taskID,
+	})
+	if err != nil {
+		fmt.Printf("  [warn] WriteCaseMemory failed: %v\n", err)
+	}
+}
+
+func classifyPattern(txn *mcp.Transaction) string {
+	if txn.OldBalanceOrig == txn.Amount && txn.NewBalanceOrig == 0 {
+		return "balance_wipe"
+	}
+	if txn.ErrorBalanceDest > 1000 || txn.ErrorBalanceDest < -1000 {
+		return "dest_no_update"
+	}
+	if txn.Amount > 200000 {
+		return "high_amount_transfer"
+	}
+	if txn.Type == "CASH_OUT" {
+		return "rapid_cashout"
+	}
+	return "unclassified"
+}
+
+func (w *Worker) autoDecide(ctx context.Context, taskID, transactionID string, txn *mcp.Transaction, verdict, action string) {
 	if err := memory.CompleteTask(ctx, w.db, taskID, "done", verdict, action, 1.0); err != nil {
 		fmt.Printf("  [error] CompleteTask (auto) failed: %v\n", err)
 		return
 	}
+	memory.WriteAuditLog(ctx, w.db, memory.AuditEntry{
+		TaskID:        taskID,
+		TransactionID: transactionID,
+		AgentID:       w.ID,
+		Action:        action,
+	})
 	fmt.Printf("  Auto-decided | risk=%.6f | verdict=%s | action=%s | status=done\n",
 		txn.RiskScore(), verdict, action)
 }
