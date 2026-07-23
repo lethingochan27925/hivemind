@@ -2,6 +2,20 @@
 set -euo pipefail
 
 TERRAFORM_DIR="terraform"
+SKIP_BUILD_IMAGE=false
+
+for arg in "$@"; do
+  case "$arg" in
+    --skip-build-image)
+      SKIP_BUILD_IMAGE=true
+      ;;
+    *)
+      echo "Unknown argument: $arg" >&2
+      echo "Usage: $0 [--skip-build-image]" >&2
+      exit 1
+      ;;
+  esac
+done
 
 log()  { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*"; }
 ok()   { printf '[%s] OK    %s\n' "$(date '+%H:%M:%S')" "$*"; }
@@ -57,14 +71,22 @@ ensure_gh
 [ -f .env ] || err ".env not found"
 [ -d "$TERRAFORM_DIR" ] || err "${TERRAFORM_DIR}/ not found"
 
+log "Loading AWS credentials from .env into this session"
+AWS_ACCESS_KEY_ID=$(grep -oP '^AWS_ACCESS_KEY_ID\s*=\s*"?\K[^"]*' .env || true)
+AWS_SECRET_ACCESS_KEY=$(grep -oP '^AWS_SECRET_ACCESS_KEY\s*=\s*"?\K[^"]*' .env || true)
+[ -n "$AWS_ACCESS_KEY_ID" ] && [ -n "$AWS_SECRET_ACCESS_KEY" ] \
+  || err "AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY not found in .env"
+export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+
 log "Verifying AWS credentials"
 aws sts get-caller-identity >/dev/null || err "AWS credentials invalid or expired"
+ok "AWS credentials valid"
 
-log "Loading secrets from .env"
+log "Loading remaining secrets from .env"
 source scripts/load-tf-vars.sh
 
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-REGION=$(aws configure get region)
+REGION=$(aws configure get region 2>/dev/null || true)
 [ -n "$REGION" ] || REGION="ap-southeast-1"
 ECR_REGISTRY="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
 
@@ -78,8 +100,8 @@ cd "$TERRAFORM_DIR"
 terraform init
 ok "Terraform initialized"
 
-PROJECT=$(terraform console <<< 'var.project' 2>/dev/null | tr -d '"' || true)
-ENVIRONMENT=$(terraform console <<< 'var.environment' 2>/dev/null | tr -d '"' || true)
+PROJECT=$(grep -oP '^project\s*=\s*"\K[^"]+' terraform.tfvars || true)
+ENVIRONMENT=$(grep -oP '^environment\s*=\s*"\K[^"]+' terraform.tfvars || true)
 [ -n "$PROJECT" ] && [ -n "$ENVIRONMENT" ] || err "could not read project/environment from terraform vars (check terraform.tfvars)"
 
 OIDC_ARN="arn:aws:iam::${ACCOUNT_ID}:oidc-provider/token.actions.githubusercontent.com"
@@ -114,7 +136,7 @@ terraform apply -auto-approve \
 ok "Base infrastructure ready"
 cd - >/dev/null
 
-log "Verifying ECR repositories exist before building images"
+log "Verifying ECR repositories exist"
 declare -A SERVICE_MAP=(
   [worker]=agent-worker
   [dispatcher]=dispatcher
@@ -132,23 +154,48 @@ for repo_name in "${SERVICE_MAP[@]}" scoring-python; do
 done
 ok "All ECR repositories confirmed"
 
-log "Building and pushing images"
+image_exists_in_ecr() {
+  local repo_name="$1"
+  aws ecr describe-images \
+    --repository-name "${PROJECT}/${ENVIRONMENT}/${repo_name}" \
+    --image-ids imageTag=latest \
+    --region "$REGION" >/dev/null 2>&1
+}
+
+if [ "$SKIP_BUILD_IMAGE" = true ]; then
+  log "Skip-build-image enabled: reusing existing ECR images where available"
+else
+  log "Building and pushing images (use --skip-build-image to reuse existing images)"
+fi
+
 for cmd_dir in "${!SERVICE_MAP[@]}"; do
   repo_name="${SERVICE_MAP[$cmd_dir]}"
   image="${ECR_REGISTRY}/${PROJECT}/${ENVIRONMENT}/${repo_name}:latest"
-  log "  ${repo_name}"
-  docker build -f Dockerfile.lambda-go \
+
+  if [ "$SKIP_BUILD_IMAGE" = true ] && image_exists_in_ecr "$repo_name"; then
+    log "  ${repo_name}: found in ECR, skipping build"
+    continue
+  fi
+
+  log "  ${repo_name}: building"
+  docker build --provenance=false --sbom=false -f Dockerfile.lambda-go \
     --build-arg SERVICE_PATH="./cmd/${cmd_dir}" \
     -t "$image" . >/dev/null
   docker push "$image" >/dev/null
 done
 
-python_image="${ECR_REGISTRY}/${PROJECT}/${ENVIRONMENT}/scoring-python:latest"
-log "  scoring-python"
-docker build -f services/scoring-python/Dockerfile -t "$python_image" . >/dev/null
-docker push "$python_image" >/dev/null
+python_repo="scoring-python"
+python_image="${ECR_REGISTRY}/${PROJECT}/${ENVIRONMENT}/${python_repo}:latest"
 
-ok "All images pushed"
+if [ "$SKIP_BUILD_IMAGE" = true ] && image_exists_in_ecr "$python_repo"; then
+  log "  ${python_repo}: found in ECR, skipping build"
+else
+  log "  ${python_repo}: building"
+  docker build --provenance=false --sbom=false -f services/scoring-python/Dockerfile -t "$python_image" . >/dev/null
+  docker push "$python_image" >/dev/null
+fi
+
+ok "Images ready"
 
 log "Applying full infrastructure (Lambda functions now have images)"
 cd "$TERRAFORM_DIR"

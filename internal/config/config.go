@@ -1,12 +1,17 @@
-// config.go: doc va tap trung toan bo cau hinh cua he thong tu file .env va bien moi truong.
+// config.go: doc va tap trung toan bo cau hinh cua he thong.
+// Local dev: doc tu .env. Tren Lambda that: fallback sang SSM Parameter Store
+// vi Lambda khong co file .env, chi co gia tri da duoc Terraform ghi vao SSM.
 package config
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strconv"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/joho/godotenv"
 )
 
@@ -32,23 +37,80 @@ type Config struct {
 	HeartbeatThreshold time.Duration
 }
 
+// ssmParamMap anh xa ten bien env sang duong dan SSM tuong ung,
+// dung dung prefix da tao trong module iam cua Terraform.
+var ssmParamMap = map[string]string{
+	"DATABASE_URL":             "/cockroachdb/connection_string",
+	"COCKROACHDB_MCP_ENDPOINT": "/cockroachdb/mcp_endpoint",
+	"TITAN_MODEL_ID":           "/bedrock/embedding_model_id",
+	"CLAUDE_MODEL_ID":          "/bedrock/model_id",
+}
+
+var ssmClient *ssm.Client
+
+func isRunningOnLambda() bool {
+	return os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != ""
+}
+
+func getSSMClient() (*ssm.Client, error) {
+	if ssmClient != nil {
+		return ssmClient, nil
+	}
+	cfg, err := config.LoadDefaultConfig(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("loading AWS config for SSM: %w", err)
+	}
+	ssmClient = ssm.NewFromConfig(cfg)
+	return ssmClient, nil
+}
+
+func getFromSSM(key string) (string, error) {
+	suffix, ok := ssmParamMap[key]
+	if !ok {
+		return "", fmt.Errorf("no SSM mapping for env var %s", key)
+	}
+
+	prefix := os.Getenv("SSM_PREFIX")
+	if prefix == "" {
+		prefix = "/hivemind/dev"
+	}
+
+	client, err := getSSMClient()
+	if err != nil {
+		return "", err
+	}
+
+	withDecryption := true
+	out, err := client.GetParameter(context.Background(), &ssm.GetParameterInput{
+		Name:           strPtr(prefix + suffix),
+		WithDecryption: &withDecryption,
+	})
+	if err != nil {
+		return "", fmt.Errorf("reading SSM parameter %s%s: %w", prefix, suffix, err)
+	}
+
+	return *out.Parameter.Value, nil
+}
+
+func strPtr(s string) *string { return &s }
+
 func Load() (*Config, error) {
 	_ = godotenv.Load(".env")
 
 	cfg := &Config{
 		DatabaseURL: mustGetEnv("DATABASE_URL"),
 
-		AWSAccessKeyID:     mustGetEnv("AWS_ACCESS_KEY_ID"),
-		AWSSecretAccessKey: mustGetEnv("AWS_SECRET_ACCESS_KEY"),
+		AWSAccessKeyID:     getEnvDefault("AWS_ACCESS_KEY_ID", ""),
+		AWSSecretAccessKey: getEnvDefault("AWS_SECRET_ACCESS_KEY", ""),
 		AWSRegionBedrock:   getEnvDefault("AWS_REGION_BEDROCK", "ap-southeast-1"),
 		AWSRegionEmbed:     getEnvDefault("AWS_REGION_EMBED", "us-east-1"),
 
 		TitanModelID:  mustGetEnv("TITAN_MODEL_ID"),
 		ClaudeModelID: mustGetEnv("CLAUDE_MODEL_ID"),
 
-		MCPEndpoint:  getEnvDefault("COCKROACHDB_MCP_ENDPOINT", "https://cockroachlabs.cloud/mcp"),
-		MCPAPIKey:    mustGetEnv("COCKROACHDB_MCP_API_KEY"),
-		MCPClusterID: mustGetEnv("COCKROACHDB_CLUSTER_ID"),
+		MCPEndpoint:  mustGetEnv("COCKROACHDB_MCP_ENDPOINT"),
+		MCPAPIKey:    getEnvDefault("COCKROACHDB_MCP_API_KEY", ""),
+		MCPClusterID: getEnvDefault("COCKROACHDB_CLUSTER_ID", ""),
 		MCPDatabase:  getEnvDefault("COCKROACHDB_DATABASE", "hivemind"),
 	}
 
@@ -79,18 +141,30 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
+// mustGetEnv doc tu bien moi truong truoc. Neu khong co va dang chay tren
+// Lambda that, thu doc tu SSM. Chi panic neu ca hai deu khong co gia tri.
 func mustGetEnv(key string) string {
-	val := os.Getenv(key)
-	if val == "" {
-		panic(fmt.Sprintf("required environment variable %s is not set", key))
+	if val := os.Getenv(key); val != "" {
+		return val
 	}
-	return val
+
+	if isRunningOnLambda() {
+		if val, err := getFromSSM(key); err == nil && val != "" {
+			return val
+		}
+	}
+
+	panic(fmt.Sprintf("required environment variable %s is not set (checked env and SSM)", key))
 }
 
 func getEnvDefault(key, fallback string) string {
-	val := os.Getenv(key)
-	if val == "" {
-		return fallback
+	if val := os.Getenv(key); val != "" {
+		return val
 	}
-	return val
+	if isRunningOnLambda() {
+		if val, err := getFromSSM(key); err == nil && val != "" {
+			return val
+		}
+	}
+	return fallback
 }

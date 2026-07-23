@@ -63,6 +63,24 @@ func (w *Worker) Run(ctx context.Context) error {
 	}
 }
 
+// RunOnce claim va xu ly dung 1 task roi return. Dung cho Lambda, noi
+// EventBridge tu goi lai lien tuc thay vi giu function song mai bang vong lap.
+// Tra ve true neu co task da xu ly, false neu khong co task nao dang cho.
+func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
+	task, err := memory.ClaimNextTask(ctx, w.db, w.ID)
+	if err != nil {
+		return false, fmt.Errorf("claiming task: %w", err)
+	}
+	if task == nil {
+		fmt.Println("No pending tasks")
+		return false, nil
+	}
+
+	fmt.Printf("Claimed task %s\n", task.ID)
+	w.processTask(ctx, task)
+	return true, nil
+}
+
 func (w *Worker) processTask(ctx context.Context, task *memory.Task) {
 	sp, err := ParseScratchpad(task.Scratchpad)
 	if err != nil {

@@ -146,6 +146,10 @@ module "lambda" {
   }
 
   schedules = {
+    "agent-worker" = {
+      schedule_expression = var.agent_worker_schedule_expression
+      enabled             = var.schedules_enabled
+    }
     "dispatcher" = {
       schedule_expression = var.dispatcher_schedule_expression
       enabled             = var.schedules_enabled

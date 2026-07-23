@@ -291,3 +291,8 @@ variable "github_repo" {
   type    = string
   default = "lethingochan27925/hivemind"
 }
+
+variable "agent_worker_schedule_expression" {
+  type    = string
+  default = "rate(1 minute)"
+}
