@@ -69,6 +69,13 @@ resource "aws_ssm_parameter" "bedrock_embedding_model_id" {
   value       = var.bedrock_embedding_model_id
   tags        = local.common_tags
 }
+resource "aws_ssm_parameter" "scoring_python_endpoint" {
+  name        = "${local.ssm_prefix}/scoring/python_endpoint"
+  type        = "String"
+  value       = "placeholder"
+  tags        = local.common_tags
+  lifecycle { ignore_changes = [value] }
+}
 
 # =============================================================================
 # Lambda execution roles -- 1 role / service, least privilege

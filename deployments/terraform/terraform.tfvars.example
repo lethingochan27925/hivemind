@@ -5,7 +5,7 @@ project     = "hivemind"
 environment = "dev"
 aws_region  = "ap-southeast-1"
 
-services  = ["agent-worker", "scoring-api", "dispatcher", "reaper"]
+services  = ["agent-worker", "scoring-api", "scoring-python", "dispatcher", "reaper", "salience-decay", "review-api"]
 image_tag = "latest"
 
 bedrock_model_id           = "anthropic.claude-3-haiku-20240307-v1:0"

@@ -31,7 +31,7 @@ variable "aws_region" {
 variable "services" {
   description = "Danh sach service chay tren Lambda"
   type        = list(string)
-  default     = ["agent-worker", "scoring-api", "dispatcher", "reaper"]
+  default     = ["agent-worker", "scoring-api", "scoring-python", "dispatcher", "reaper", "salience-decay", "review-api"]
 }
 
 variable "image_tag" {
@@ -239,4 +239,50 @@ variable "cockroachdb_mcp_endpoint" {
   description = "CockroachDB Managed MCP Server endpoint"
   type        = string
   sensitive   = true
+}
+
+variable "scoring_python_timeout_seconds" {
+  type    = number
+  default = 30
+}
+
+variable "scoring_python_memory_mb" {
+  type    = number
+  default = 1024
+}
+
+variable "salience_decay_timeout_seconds" {
+  type    = number
+  default = 60
+}
+
+variable "salience_decay_memory_mb" {
+  type    = number
+  default = 256
+}
+
+# Chay it hon dispatcher/reaper - day la memory management, khong phai fault recovery
+variable "salience_decay_schedule_expression" {
+  type    = string
+  default = "rate(6 hours)"
+}
+
+variable "review_api_timeout_seconds" {
+  type    = number
+  default = 30
+}
+
+variable "review_api_memory_mb" {
+  type    = number
+  default = 256
+}
+
+variable "review_api_url_auth_type" {
+  type    = string
+  default = "NONE"
+
+  validation {
+    condition     = contains(["AWS_IAM", "NONE"], var.review_api_url_auth_type)
+    error_message = "review_api_url_auth_type must be AWS_IAM or NONE"
+  }
 }

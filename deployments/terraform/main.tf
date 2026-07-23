@@ -59,7 +59,7 @@ module "iam" {
   bedrock_embedding_region   = var.bedrock_embedding_region
 }
 
-# -- 4. Lambda: 4 function + EventBridge schedules + Function URL -------------
+
 module "lambda" {
   source      = "./modules/lambda"
   project     = var.project
@@ -70,8 +70,6 @@ module "lambda" {
   role_arns          = module.iam.role_arns
   log_retention_days = var.lambda_log_retention_days
 
-  # Env chung cho moi function.
-  # Secrets KHONG o day -- code doc tu SSM luc runtime bang SSM_PREFIX.
   common_env = {
     PROJECT                  = var.project
     ENVIRONMENT              = var.environment
@@ -100,15 +98,22 @@ module "lambda" {
       memory_mb            = var.scoring_api_memory_mb
       reserved_concurrency = -1
       environment = {
-        RISK_LOW_THRESHOLD  = tostring(var.risk_low_threshold)
-        RISK_HIGH_THRESHOLD = tostring(var.risk_high_threshold)
+        RISK_LOW_THRESHOLD    = tostring(var.risk_low_threshold)
+        RISK_HIGH_THRESHOLD   = tostring(var.risk_high_threshold)
       }
+    }
+
+    "scoring-python" = {
+      timeout_seconds      = var.scoring_python_timeout_seconds
+      memory_mb            = var.scoring_python_memory_mb
+      reserved_concurrency = -1
+      environment          = {}
     }
 
     "dispatcher" = {
       timeout_seconds      = var.dispatcher_timeout_seconds
       memory_mb            = var.dispatcher_memory_mb
-      reserved_concurrency = 1 # chi 1 dispatcher -> khong tao task trung
+      reserved_concurrency = 1
       environment = {
         DISPATCHER_BATCH_SIZE         = tostring(var.dispatcher_batch_size)
         DISPATCHER_MAX_WORKER_INVOKES = tostring(var.dispatcher_max_worker_invokes)
@@ -124,6 +129,20 @@ module "lambda" {
         REAPER_STUCK_THRESHOLD_SECONDS = tostring(var.reaper_stuck_threshold_seconds)
       }
     }
+
+    "salience-decay" = {
+      timeout_seconds      = var.salience_decay_timeout_seconds
+      memory_mb            = var.salience_decay_memory_mb
+      reserved_concurrency = 1
+      environment          = {}
+    }
+
+    "review-api" = {
+      timeout_seconds      = var.review_api_timeout_seconds
+      memory_mb            = var.review_api_memory_mb
+      reserved_concurrency = -1
+      environment          = {}
+    }
   }
 
   schedules = {
@@ -135,13 +154,15 @@ module "lambda" {
       schedule_expression = var.reaper_schedule_expression
       enabled             = var.schedules_enabled
     }
+    "salience-decay" = {
+      schedule_expression = var.salience_decay_schedule_expression
+      enabled             = var.schedules_enabled
+    }
   }
 
-  function_url_services  = ["scoring-api"]
+  function_url_services  = ["scoring-api", "scoring-python", "review-api"]
   function_url_auth_type = var.scoring_api_url_auth_type
 }
-
-# -- 5. Monitoring: billing + per-function alarms + dashboard -----------------
 module "monitoring" {
   source      = "./modules/monitoring"
   project     = var.project
