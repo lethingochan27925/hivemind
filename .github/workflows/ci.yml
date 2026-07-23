@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  go-build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Build
+        run: go build ./...
+
+      - name: Unit tests
+        run: go test ./... -v
+
+  go-fmt-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - name: Check gofmt
+        run: |
+          UNFORMATTED=$(gofmt -l .)
+          if [ -n "$UNFORMATTED" ]; then
+            echo "Files not gofmt'd:"
+            echo "$UNFORMATTED"
+            exit 1
+          fi
+
+  go-vet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - name: Vet
+        run: go vet ./...
+
+  python-scoring-service:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install --no-cache-dir -r services/scoring-python/requirements.txt
+      - name: Syntax check
+        run: python -m py_compile services/scoring-python/main.py
+      - name: Import check
+        run: python -c "import sys; sys.path.insert(0, 'services/scoring-python'); import main"
+
+  docker-build-check:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [worker, dispatcher, heartbeat-reaper, salience-decay, scoring-api, review-api]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build ${{ matrix.service }} image
+        run: |
+          docker build -f Dockerfile.lambda-go \
+            --build-arg SERVICE_PATH=./cmd/${{ matrix.service }} \
+            -t hivemind-${{ matrix.service }}:ci .
+
+  docker-build-scoring-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build scoring-python image
+        run: |
+          docker build -f services/scoring-python/Dockerfile \
+            -t hivemind-scoring-python:ci .
+
+  terraform-validate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: deployments/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.9.0'
+      - name: Init (backend only, no state access needed for validate)
+        run: terraform init -backend=false
+      - name: Validate
+        run: terraform validate
+      - name: Format check
+        run: terraform fmt -check -recursive
