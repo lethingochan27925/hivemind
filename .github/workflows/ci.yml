@@ -71,7 +71,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build ${{ matrix.service }} image
         run: |
-          docker build -f Dockerfile.lambda-go \
+          docker build --provenance=false --sbom=false -f Dockerfile.lambda-go \
             --build-arg SERVICE_PATH=./cmd/${{ matrix.service }} \
             -t hivemind-${{ matrix.service }}:ci .
 
@@ -81,7 +81,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build scoring-python image
         run: |
-          docker build -f services/scoring-python/Dockerfile \
+          docker build --provenance=false --sbom=false -f services/scoring-python/Dockerfile \
             -t hivemind-scoring-python:ci .
 
   terraform-validate:

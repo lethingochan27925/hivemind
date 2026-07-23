@@ -50,7 +50,7 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           REPO="${ECR_REGISTRY}/hivemind/dev/${{ matrix.service }}"
-          docker build -f Dockerfile.lambda-go \
+          docker build --provenance=false --sbom=false -f Dockerfile.lambda-go \
             --build-arg SERVICE_PATH=${{ matrix.cmd_path }} \
             -t "${REPO}:${IMAGE_TAG}" \
             -t "${REPO}:latest" .
@@ -78,7 +78,7 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           REPO="${ECR_REGISTRY}/hivemind/dev/scoring-python"
-          docker build -f services/scoring-python/Dockerfile \
+          docker build --provenance=false --sbom=false -f services/scoring-python/Dockerfile \
             -t "${REPO}:${IMAGE_TAG}" \
             -t "${REPO}:latest" .
           docker push "${REPO}:${IMAGE_TAG}"
