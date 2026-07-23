@@ -69,3 +69,8 @@ variable "log_retention_days" {
   type        = number
   default     = 7
 }
+
+variable "canary_services" {
+  type    = list(string)
+  default = []
+}

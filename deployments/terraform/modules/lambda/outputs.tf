@@ -16,3 +16,11 @@ output "function_urls" {
 output "log_group_names" {
   value = { for k, v in aws_cloudwatch_log_group.functions : k => v.name }
 }
+
+output "alias_arns" {
+  value = { for k, v in aws_lambda_alias.live : k => v.arn }
+}
+
+output "canary_services" {
+  value = var.canary_services
+}

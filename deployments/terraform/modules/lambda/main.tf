@@ -33,6 +33,7 @@ resource "aws_lambda_function" "functions" {
   timeout                        = var.function_config[each.key].timeout_seconds
   memory_size                    = var.function_config[each.key].memory_mb
   reserved_concurrent_executions = var.function_config[each.key].reserved_concurrency
+  publish                        = true
 
   environment {
     variables = merge(var.common_env, var.function_config[each.key].environment)
@@ -41,6 +42,25 @@ resource "aws_lambda_function" "functions" {
   tags = merge(local.common_tags, { Name = each.value })
 
   depends_on = [aws_cloudwatch_log_group.functions]
+}
+
+resource "aws_lambda_alias" "live" {
+  for_each = var.function_names
+
+  name             = "live"
+  function_name    = aws_lambda_function.functions[each.key].function_name
+  function_version = aws_lambda_function.functions[each.key].version
+
+  dynamic "routing_config" {
+    for_each = contains(var.canary_services, each.key) ? [1] : []
+    content {
+      additional_version_weights = {}
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [function_version, routing_config]
+  }
 }
 
 # =============================================================================
@@ -61,7 +81,7 @@ resource "aws_cloudwatch_event_target" "schedules" {
 
   rule      = aws_cloudwatch_event_rule.schedules[each.key].name
   target_id = each.key
-  arn       = aws_lambda_function.functions[each.key].arn
+  arn       = aws_lambda_alias.live[each.key].arn
 }
 
 resource "aws_lambda_permission" "eventbridge" {
@@ -69,7 +89,8 @@ resource "aws_lambda_permission" "eventbridge" {
 
   statement_id  = "AllowInvokeFromEventBridge"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.functions[each.key].function_name
+  function_name = aws_lambda_alias.live[each.key].function_name
+  qualifier     = aws_lambda_alias.live[each.key].name
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.schedules[each.key].arn
 }
@@ -81,5 +102,6 @@ resource "aws_lambda_function_url" "endpoints" {
   for_each = toset(var.function_url_services)
 
   function_name      = aws_lambda_function.functions[each.key].function_name
+  qualifier          = aws_lambda_alias.live[each.key].name
   authorization_type = var.function_url_auth_type
 }

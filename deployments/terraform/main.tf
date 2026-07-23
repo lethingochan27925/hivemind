@@ -162,6 +162,8 @@ module "lambda" {
 
   function_url_services  = ["scoring-api", "scoring-python", "review-api"]
   function_url_auth_type = var.scoring_api_url_auth_type
+
+  canary_services = ["agent-worker", "scoring-api", "scoring-python", "review-api"]
 }
 module "monitoring" {
   source      = "./modules/monitoring"
