@@ -9,6 +9,10 @@ on:
 env:
   AWS_REGION: ap-southeast-1
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   deploy-staging:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
@@ -18,11 +22,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
+      - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Set image tag from triggering commit
@@ -34,11 +37,11 @@ jobs:
           terraform_version: '1.9.0'
 
       - name: Terraform Init
-        working-directory: deployments/terraform
+        working-directory: terraform
         run: terraform init
 
       - name: Terraform Apply (update image_tag var)
-        working-directory: deployments/terraform
+        working-directory: terraform
         env:
           TF_VAR_cockroachdb_connection_string: ${{ secrets.DATABASE_URL }}
           TF_VAR_cockroachdb_mcp_endpoint: ${{ secrets.COCKROACHDB_MCP_ENDPOINT }}

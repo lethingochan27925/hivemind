@@ -165,6 +165,21 @@ module "lambda" {
 
   canary_services = ["agent-worker", "scoring-api", "scoring-python", "review-api"]
 }
+
+module "github_oidc" {
+  source      = "./modules/github-oidc"
+  project     = var.project
+  environment = var.environment
+
+  github_repo    = var.github_repo
+  tfstate_bucket = "hivemind-tfstate-375916766707"
+
+  common_tags = {
+    Project     = var.project
+    Environment = var.environment
+    ManagedBy   = "terraform"
+  }
+}
 module "monitoring" {
   source      = "./modules/monitoring"
   project     = var.project

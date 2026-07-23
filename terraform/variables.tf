@@ -286,3 +286,8 @@ variable "review_api_url_auth_type" {
     error_message = "review_api_url_auth_type must be AWS_IAM or NONE"
   }
 }
+
+variable "github_repo" {
+  type    = string
+  default = "lethingochan27925/hivemind"
+}

@@ -38,3 +38,7 @@ output "next_steps" {
        terraform apply -var="agent_worker_timeout_seconds=3"
   EOT
 }
+
+output "github_actions_role_arn" {
+  value = module.github_oidc.role_arn
+}

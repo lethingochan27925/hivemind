@@ -8,6 +8,10 @@ on:
 env:
   AWS_REGION: ap-southeast-1
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   build-push:
     runs-on: ubuntu-latest
@@ -16,31 +20,24 @@ jobs:
         include:
           - service: agent-worker
             cmd_path: ./cmd/worker
-            dockerfile: Dockerfile.lambda-go
           - service: dispatcher
             cmd_path: ./cmd/dispatcher
-            dockerfile: Dockerfile.lambda-go
           - service: reaper
             cmd_path: ./cmd/heartbeat-reaper
-            dockerfile: Dockerfile.lambda-go
           - service: salience-decay
             cmd_path: ./cmd/salience-decay
-            dockerfile: Dockerfile.lambda-go
           - service: scoring-api
             cmd_path: ./cmd/scoring-api
-            dockerfile: Dockerfile.lambda-go
           - service: review-api
             cmd_path: ./cmd/review-api
-            dockerfile: Dockerfile.lambda-go
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
+      - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to ECR
@@ -53,7 +50,7 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           REPO="${ECR_REGISTRY}/hivemind/dev/${{ matrix.service }}"
-          docker build -f ${{ matrix.dockerfile }} \
+          docker build -f Dockerfile.lambda-go \
             --build-arg SERVICE_PATH=${{ matrix.cmd_path }} \
             -t "${REPO}:${IMAGE_TAG}" \
             -t "${REPO}:latest" .
@@ -65,11 +62,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
+      - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to ECR

@@ -46,7 +46,7 @@ bin/
 # Backup CSV exports
 backup_*.csv
 
-# Python venv (bo sung day du, .venv da co nhung them venv/ phong khi dat ten khac)
+# Python venv 
 venv/
 *.egg-info/
 
