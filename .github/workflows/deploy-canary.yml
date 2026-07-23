@@ -1,0 +1,124 @@
+name: Deploy Canary Production
+
+on:
+  workflow_run:
+    workflows: ["Deploy Staging"]
+    types: [completed]
+    branches: [main]
+
+env:
+  AWS_REGION: ap-southeast-1
+  PROJECT: hivemind
+  ENVIRONMENT: dev
+  CANARY_WEIGHT: 0.10
+  CANARY_WAIT_SECONDS: 300
+
+jobs:
+  canary-deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [agent-worker, scoring-api, scoring-python, review-api]
+      fail-fast: false
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get function and current version info
+        id: info
+        run: |
+          FUNCTION_NAME="${PROJECT}-${ENVIRONMENT}-${{ matrix.service }}"
+          NEW_VERSION=$(aws lambda list-versions-by-function \
+            --function-name "$FUNCTION_NAME" \
+            --query 'max_by(Versions, &to_number(Version))' \
+            --output json | jq -r '.Version')
+          CURRENT_ALIAS=$(aws lambda get-alias \
+            --function-name "$FUNCTION_NAME" \
+            --name live)
+          OLD_VERSION=$(echo "$CURRENT_ALIAS" | jq -r '.FunctionVersion')
+
+          echo "function_name=$FUNCTION_NAME" >> "$GITHUB_OUTPUT"
+          echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "old_version=$OLD_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Shift 10% traffic to new version
+        run: |
+          aws lambda update-alias \
+            --function-name "${{ steps.info.outputs.function_name }}" \
+            --name live \
+            --function-version "${{ steps.info.outputs.old_version }}" \
+            --routing-config "AdditionalVersionWeights={${{ steps.info.outputs.new_version }}=${CANARY_WEIGHT}}"
+
+          echo "Canary started: ${CANARY_WEIGHT} traffic -> version ${{ steps.info.outputs.new_version }}"
+
+      - name: Wait and observe
+        run: sleep ${CANARY_WAIT_SECONDS}
+
+      - name: Check CloudWatch error alarm
+        id: check
+        run: |
+          ALARM_NAME="${PROJECT}-${ENVIRONMENT}-${{ matrix.service }}-errors"
+          STATE=$(aws cloudwatch describe-alarms \
+            --alarm-names "$ALARM_NAME" \
+            --query 'MetricAlarms[0].StateValue' \
+            --output text)
+          echo "alarm_state=$STATE" >> "$GITHUB_OUTPUT"
+          echo "Alarm ${ALARM_NAME} state: ${STATE}"
+
+      - name: Promote to 100% (alarm OK)
+        if: steps.check.outputs.alarm_state != 'ALARM'
+        run: |
+          aws lambda update-alias \
+            --function-name "${{ steps.info.outputs.function_name }}" \
+            --name live \
+            --function-version "${{ steps.info.outputs.new_version }}" \
+            --routing-config "{}"
+          echo "Promoted: 100% traffic -> version ${{ steps.info.outputs.new_version }}"
+
+      - name: Rollback (alarm triggered)
+        if: steps.check.outputs.alarm_state == 'ALARM'
+        run: |
+          aws lambda update-alias \
+            --function-name "${{ steps.info.outputs.function_name }}" \
+            --name live \
+            --function-version "${{ steps.info.outputs.old_version }}" \
+            --routing-config "{}"
+          echo "Rolled back: 100% traffic -> version ${{ steps.info.outputs.old_version }} (canary failed)"
+          exit 1
+
+  deploy-scheduled-services:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [dispatcher, reaper, salience-decay]
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Promote alias directly (low-risk scheduled service)
+        run: |
+          FUNCTION_NAME="${PROJECT}-${ENVIRONMENT}-${{ matrix.service }}"
+          NEW_VERSION=$(aws lambda list-versions-by-function \
+            --function-name "$FUNCTION_NAME" \
+            --query 'max_by(Versions, &to_number(Version))' \
+            --output json | jq -r '.Version')
+
+          aws lambda update-alias \
+            --function-name "$FUNCTION_NAME" \
+            --name live \
+            --function-version "$NEW_VERSION" \
+            --routing-config "{}"
+
+          echo "Deployed ${{ matrix.service }} -> version ${NEW_VERSION} (no canary, scheduled service)"
