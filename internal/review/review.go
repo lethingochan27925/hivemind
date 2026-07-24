@@ -9,10 +9,10 @@ import (
 )
 
 type PendingReview struct {
-	TaskID        string
-	TransactionID string
-	Verdict       string
-	Confidence    float64
+	TaskID        string  `json:"task_id"`
+	TransactionID string  `json:"transaction_id"`
+	Verdict       string  `json:"verdict"`
+	Confidence    float64 `json:"confidence"`
 }
 
 func ListPendingReviews(ctx context.Context, db *cockroach.Client) ([]PendingReview, error) {

@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+:root {
+  --color-bg-primary: #0b0c0e;
+  --color-bg-panel: #14161a;
+  --color-bg-panel-hover: #1c1f24;
+  --color-border: #232630;
+
+  --color-blue: #5794F2;
+  --color-green: #73BF69;
+  --color-yellow: #FADE2A;
+  --color-red: #F2495C;
+  --color-purple: #B877D9;
+  --color-orange: #FF9830;
+
+  --color-text-primary: #D8D9DA;
+  --color-text-secondary: #9fa4ab;
+  --color-text-tertiary: #6C7079;
+}
+
+@theme inline {
+  --color-bg-primary: var(--color-bg-primary);
+  --color-bg-panel: var(--color-bg-panel);
+  --color-bg-panel-hover: var(--color-bg-panel-hover);
+  --color-border: var(--color-border);
+  --color-blue: var(--color-blue);
+  --color-green: var(--color-green);
+  --color-yellow: var(--color-yellow);
+  --color-red: var(--color-red);
+  --color-purple: var(--color-purple);
+  --color-orange: var(--color-orange);
+  --color-text-primary: var(--color-text-primary);
+  --color-text-secondary: var(--color-text-secondary);
+  --color-text-tertiary: var(--color-text-tertiary);
+}
+
+body {
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-family: var(--font-geist), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 12px;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+
+h1, h2, h3 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
