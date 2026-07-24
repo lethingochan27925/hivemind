@@ -1,54 +1,52 @@
+# Environment & Secrets
+.env
+.venv
+venv/
+
 # Data
 data/raw/
 data/processed/
 *.pkl
 *.joblib
 *.csv
+backups/
 
-# Environment
-.env
-.venv
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Go
+*.exe
+bin/
+/worker
+/dispatcher
+/heartbeat-reaper
+/scoring-api
+*/bootstrap
 
 # Terraform
 **/.terraform/
 **/.terraform.lock.hcl
 *.tfstate
 *.tfstate.backup
+.terraform.tfstate.lock.info
 *.tfplan
 *.tfvars
 
-# Python
-__pycache__/
-*.pyc
-*.pyo
+# Docker
+*.tar
 
-# Go
-*.exe
-*/bootstrap
-
-# OS
-.DS_Store
-Thumbs.db
-
-
+# Logs & debug files
+*.log
+all-workflows.txt
+terraform-full-review.txt
 
 # IDE
 .vscode/
 .idea/
 
-# Go binaries
-bin/
-/worker
-/dispatcher
-/heartbeat-reaper
-/scoring-api
-
-# Backup CSV exports
-backup_*.csv
-
-# Python venv 
-venv/
-*.egg-info/
-
-# Logs
-*.log
+# OS
+.DS_Store
+Thumbs.db
