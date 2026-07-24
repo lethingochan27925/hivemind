@@ -66,7 +66,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: [worker, dispatcher, heartbeat-reaper, salience-decay, scoring-api, review-api]
+        service: [worker, dispatcher, heartbeat-reaper, salience-decay, scoring-api, dashboard-api]
     steps:
       - uses: actions/checkout@v4
       - name: Build ${{ matrix.service }} image

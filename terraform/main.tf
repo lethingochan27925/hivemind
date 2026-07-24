@@ -137,7 +137,7 @@ module "lambda" {
       environment          = {}
     }
 
-    "review-api" = {
+    "dashboard-api" = {
       timeout_seconds      = var.review_api_timeout_seconds
       memory_mb            = var.review_api_memory_mb
       reserved_concurrency = -1
@@ -164,10 +164,10 @@ module "lambda" {
     }
   }
 
-  function_url_services  = ["scoring-api", "scoring-python", "review-api"]
+  function_url_services  = ["scoring-api", "scoring-python", "dashboard-api"]
   function_url_auth_type = var.scoring_api_url_auth_type
 
-  canary_services = ["agent-worker", "scoring-api", "scoring-python", "review-api"]
+  canary_services = ["agent-worker", "scoring-api", "scoring-python", "dashboard-api"]
 }
 
 module "github_oidc" {

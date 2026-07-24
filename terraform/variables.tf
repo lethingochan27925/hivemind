@@ -31,7 +31,7 @@ variable "aws_region" {
 variable "services" {
   description = "Danh sach service chay tren Lambda"
   type        = list(string)
-  default     = ["agent-worker", "scoring-api", "scoring-python", "dispatcher", "reaper", "salience-decay", "review-api"]
+  default     = ["agent-worker", "scoring-api", "scoring-python", "dispatcher", "reaper", "salience-decay", "dashboard-api"]
 }
 
 variable "image_tag" {

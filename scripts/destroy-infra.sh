@@ -58,7 +58,7 @@ for bucket_suffix in dashboard evidence lambda-artifacts; do
 done
 
 log "Deleting images from ECR repositories (Terraform cannot destroy non-empty repos)"
-declare -a REPOS=(agent-worker dispatcher reaper salience-decay scoring-api scoring-python review-api)
+declare -a REPOS=(agent-worker dispatcher reaper salience-decay scoring-api scoring-python dashboard-api)
 
 for repo in "${REPOS[@]}"; do
   repo_name="${PROJECT}/${ENVIRONMENT}/${repo}"

@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: [agent-worker, scoring-api, scoring-python, review-api]
+        service: [agent-worker, scoring-api, scoring-python, dashboard-api]
       fail-fast: false
 
     steps:

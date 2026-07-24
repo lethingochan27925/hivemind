@@ -143,7 +143,7 @@ declare -A SERVICE_MAP=(
   [heartbeat-reaper]=reaper
   [salience-decay]=salience-decay
   [scoring-api]=scoring-api
-  [review-api]=review-api
+  [dashboard-api]=dashboard-api
 )
 
 for repo_name in "${SERVICE_MAP[@]}" scoring-python; do

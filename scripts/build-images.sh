@@ -19,8 +19,8 @@ docker build -f Dockerfile.lambda-go --build-arg SERVICE_PATH=./cmd/salience-dec
 echo "Building hivemind-scoring-api (Go)..."
 docker build -f Dockerfile.lambda-go --build-arg SERVICE_PATH=./cmd/scoring-api -t hivemind-scoring-api:latest .
 
-echo "Building hivemind-review-api (Go)..."
-docker build -f Dockerfile.lambda-go --build-arg SERVICE_PATH=./cmd/review-api -t hivemind-review-api:latest .
+echo "Building hivemind-dashboard-api (Go)..."
+docker build -f Dockerfile.lambda-go --build-arg SERVICE_PATH=./cmd/dashboard-api -t hivemind-dashboard-api:latest .
 
 echo "All images built successfully."
 docker images | grep hivemind
