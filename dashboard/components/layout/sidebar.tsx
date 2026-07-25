@@ -8,6 +8,7 @@ import {
   Brain,
   Activity,
   ServerCog,
+  DollarSign,
 } from "lucide-react";
 
 const navItems = [
@@ -15,6 +16,7 @@ const navItems = [
   { href: "/reviews", label: "Review Queue", icon: ClipboardCheck },
   { href: "/memory", label: "Fleet & Memory", icon: Brain },
   { href: "/transactions", label: "Transactions", icon: Activity },
+  { href: "/cost", label: "Cost", icon: DollarSign },
   { href: "/infrastructure", label: "Infrastructure", icon: ServerCog },
 ];
 
@@ -24,9 +26,7 @@ export function Sidebar() {
   return (
     <aside className="w-52 shrink-0 border-r border-border bg-bg-panel flex flex-col">
       <div className="h-12 flex items-center px-4 border-b border-border">
-        <span className="text-sm font-medium text-text-primary">
-          HiveMind
-        </span>
+        <span className="text-sm font-medium text-text-primary">HiveMind</span>
       </div>
       <nav className="flex-1 py-2">
         {navItems.map((item) => {

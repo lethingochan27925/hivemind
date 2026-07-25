@@ -34,6 +34,7 @@ func main() {
 	http.HandleFunc("/transactions", dashboardapi.CORSMiddleware(s.ListTransactions))
 	http.HandleFunc("/transactions/", dashboardapi.CORSMiddleware(s.GetTransactionAudit))
 	http.HandleFunc("/infrastructure", dashboardapi.CORSMiddleware(s.GetInfrastructure))
+	http.HandleFunc("/infrastructure/simulate-crash", dashboardapi.CORSMiddleware(s.SimulateCrash))
 	http.HandleFunc("/cost", dashboardapi.CORSMiddleware(s.GetCost))
 
 	port := os.Getenv("DASHBOARD_API_PORT")

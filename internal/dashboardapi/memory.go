@@ -128,7 +128,7 @@ func (s *Server) queryActiveAgents(ctx context.Context) ([]ActiveAgent, error) {
 			claimed_at
 		FROM tasks
 		WHERE claimed_by IS NOT NULL
-		  AND claimed_at >= now() - INTERVAL '10 minutes'
+		  AND claimed_at >= now() - INTERVAL '30 minutes'
 		ORDER BY claimed_by, claimed_at DESC
 	`)
 	if err != nil {

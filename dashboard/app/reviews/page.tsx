@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { api, PendingReview } from "@/lib/api";
 import { Panel } from "@/components/ui/panel";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/ui/page-header";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export default function ReviewsPage() {
   const [reviews, setReviews] = useState<PendingReview[]>([]);
@@ -51,29 +53,31 @@ export default function ReviewsPage() {
 
   return (
     <div>
-      <div className="h-12 flex items-center justify-between px-4 border-b border-border">
-        <h1 className="text-[16px] font-semibold text-text-primary tracking-tight">
-          Review Queue
-        </h1>
-        <Badge variant={reviews.length > 0 ? "yellow" : "default"}>
-          {reviews.length} pending
-        </Badge>
-      </div>
+      <PageHeader
+        title="Review Queue"
+        description="Cases the agent flagged as uncertain, awaiting human approval"
+        actions={
+          <Badge variant={reviews.length > 0 ? "yellow" : "default"}>
+            {reviews.length} pending
+          </Badge>
+        }
+      />
 
       <div className="p-4 grid grid-cols-3 gap-3">
         <Panel title="Pending tasks" className="col-span-2">
           {error && <div className="text-red text-xs mb-2">{error}</div>}
           {reviews.length === 0 ? (
-            <div className="text-text-tertiary text-xs py-4 text-center">
-              No tasks awaiting review
-            </div>
+            <EmptyState message="No tasks awaiting review" />
           ) : (
             <table className="w-full text-xs">
               <thead>
                 <tr className="text-left text-text-tertiary border-b border-border">
-                  <th className="pb-1.5 font-normal">Task</th>
-                  <th className="pb-1.5 font-normal">Verdict</th>
-                  <th className="pb-1.5 font-normal">Confidence</th>
+                  <th className="pb-1.5 pr-3 font-normal">Task</th>
+                  <th className="pb-1.5 pr-3 font-normal">Type</th>
+                  <th className="pb-1.5 pr-3 font-normal text-right">Amount</th>
+                  <th className="pb-1.5 pr-3 font-normal text-right">Risk</th>
+                  <th className="pb-1.5 pr-3 font-normal">Verdict</th>
+                  <th className="pb-1.5 font-normal text-right">Confidence</th>
                 </tr>
               </thead>
               <tbody>
@@ -87,15 +91,20 @@ export default function ReviewsPage() {
                         : "hover:bg-bg-panel-hover/50"
                     }`}
                   >
-                    <td className="py-1.5 text-text-secondary">
+                    <td className="py-1.5 pr-3 text-text-secondary">
                       {r.task_id.slice(0, 8)}
                     </td>
-                    <td className="py-1.5">
-                      <Badge variant={verdictColor(r.verdict)}>
-                        {r.verdict}
-                      </Badge>
+                    <td className="py-1.5 pr-3 text-text-secondary">{r.txn_type}</td>
+                    <td className="py-1.5 pr-3 text-right text-text-primary">
+                      {r.amount.toLocaleString()}
                     </td>
-                    <td className="py-1.5 text-text-secondary">
+                    <td className="py-1.5 pr-3 text-right text-text-secondary">
+                      {r.risk_score.toFixed(3)}
+                    </td>
+                    <td className="py-1.5 pr-3">
+                      <Badge variant={verdictColor(r.verdict)}>{r.verdict}</Badge>
+                    </td>
+                    <td className="py-1.5 text-right text-text-secondary">
                       {(r.confidence * 100).toFixed(0)}%
                     </td>
                   </tr>
@@ -107,16 +116,15 @@ export default function ReviewsPage() {
 
         <Panel title="Decision">
           {!selected ? (
-            <div className="text-text-tertiary text-xs py-4 text-center">
-              Select a task to review
-            </div>
+            <EmptyState message="Select a task to review" />
           ) : (
             <div className="space-y-3">
               <div className="text-xs text-text-secondary">
                 Task <span className="text-text-primary">{selected.task_id}</span>
               </div>
               <div className="text-xs text-text-secondary">
-                Transaction {selected.transaction_id}
+                {selected.txn_type} · {selected.amount.toLocaleString()} · risk{" "}
+                {selected.risk_score.toFixed(3)}
               </div>
 
               <input

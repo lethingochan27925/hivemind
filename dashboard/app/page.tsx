@@ -5,6 +5,8 @@ import { api, OverviewData } from "@/lib/api";
 import { Panel } from "@/components/ui/panel";
 import { Stat } from "@/components/ui/stat";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/ui/page-header";
+import { EmptyState } from "@/components/ui/empty-state";
 import { RefreshCw } from "lucide-react";
 import {
   LineChart,
@@ -60,21 +62,24 @@ export default function OverviewPage() {
 
   return (
     <div>
-      <div className="h-12 flex items-center justify-between px-4 border-b border-border">
-        <h1 className="text-[16px] font-semibold text-text-primary tracking-tight">Overview</h1>
-        <div className="flex items-center gap-3 text-xs text-text-tertiary">
-          {error && <Badge variant="red">API unreachable</Badge>}
-          {lastRefresh && (
-            <span className="flex items-center gap-1.5">
-              <RefreshCw size={12} />
-              Refreshed {secondsAgo}s ago
-            </span>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        title="Overview"
+        description="Fleet health, verdict breakdown, and live agent activity"
+        actions={
+          <div className="flex items-center gap-3 text-xs text-text-tertiary">
+            {error && <Badge variant="red">API unreachable</Badge>}
+            {lastRefresh && (
+              <span className="flex items-center gap-1.5">
+                <RefreshCw size={12} />
+                Refreshed {secondsAgo}s ago
+              </span>
+            )}
+          </div>
+        }
+      />
 
       <div className="p-4 space-y-3">
-        <div className="grid grid-cols-5 border border-border rounded divide-x divide-border">
+        <div className="grid grid-cols-5 border border-border rounded-sm divide-x divide-border">
           <Stat label="Fraud detected" value={fraudCount} color="red" />
           <Stat label="Escalated" value={escalateCount} color="yellow" />
           <Stat label="Legit" value={legitCount} color="green" />
@@ -85,6 +90,19 @@ export default function OverviewPage() {
           />
           <Stat label="Active agents" value={uniqueAgents} color="blue" />
         </div>
+
+        {data?.verdict_accuracy_pct != null && (
+          <Panel title="Real-world impact">
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-semibold text-green">
+                {data.verdict_accuracy_pct}%
+              </span>
+              <span className="text-xs text-text-tertiary">
+                verdict accuracy against ground truth labels
+              </span>
+            </div>
+          </Panel>
+        )}
 
         <Panel title="Memory recall hits">
           <div className="h-36">
@@ -124,9 +142,7 @@ export default function OverviewPage() {
                 </LineChart>
               </ResponsiveContainer>
             ) : (
-              <div className="h-full flex items-center justify-center text-text-tertiary text-xs">
-                No memory recall data yet
-              </div>
+              <EmptyState message="No memory recall data yet" />
             )}
           </div>
         </Panel>
@@ -154,9 +170,7 @@ export default function OverviewPage() {
               </tbody>
             </table>
           ) : (
-            <div className="text-text-tertiary text-xs py-3 text-center">
-              No agents currently investigating
-            </div>
+            <EmptyState message="No agents currently investigating" />
           )}
         </Panel>
       </div>

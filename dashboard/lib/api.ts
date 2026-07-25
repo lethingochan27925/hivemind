@@ -21,6 +21,7 @@ export interface OverviewData {
   pending_reviews: number;
   memory_hits_trend: MemoryHitPoint[] | null;
   live_tasks: LiveTask[] | null;
+  verdict_accuracy_pct?: number;
 }
 
 export interface PendingReview {
@@ -28,6 +29,9 @@ export interface PendingReview {
   transaction_id: string;
   verdict: string;
   confidence: number;
+  amount: number;
+  risk_score: number;
+  txn_type: string;
 }
 
 export interface PatternStat {
@@ -143,4 +147,9 @@ export const api = {
     fetchJSON<AuditStep[]>(`/transactions/${id}/audit`),
   getInfrastructure: () => fetchJSON<InfrastructureData>("/infrastructure"),
   getCost: () => fetchJSON<CostData>("/cost"),
+  simulateCrash: () =>
+    fetchJSON<{ status: string; task_id: string; message: string }>(
+      "/infrastructure/simulate-crash",
+      { method: "POST" }
+    ),
 };

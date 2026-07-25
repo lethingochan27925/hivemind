@@ -26,10 +26,11 @@ type LiveTask struct {
 }
 
 type OverviewResponse struct {
-	VerdictsToday   []VerdictCount   `json:"verdicts_today"`
-	PendingReviews  int              `json:"pending_reviews"`
-	MemoryHitsTrend []MemoryHitPoint `json:"memory_hits_trend"`
-	LiveTasks       []LiveTask       `json:"live_tasks"`
+	VerdictsToday      []VerdictCount   `json:"verdicts_today"`
+	PendingReviews     int              `json:"pending_reviews"`
+	MemoryHitsTrend    []MemoryHitPoint `json:"memory_hits_trend"`
+	LiveTasks          []LiveTask       `json:"live_tasks"`
+	VerdictAccuracyPct *float64         `json:"verdict_accuracy_pct,omitempty"`
 }
 
 func (s *Server) GetOverview(w http.ResponseWriter, r *http.Request) {
@@ -67,11 +68,17 @@ func (s *Server) GetOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	accuracy, err := s.queryVerdictAccuracy(ctx)
+	if err != nil {
+		log.Printf("querying verdict accuracy: %v", err)
+	}
+
 	resp := OverviewResponse{
-		VerdictsToday:   verdicts,
-		PendingReviews:  pendingCount,
-		MemoryHitsTrend: trend,
-		LiveTasks:       liveTasks,
+		VerdictsToday:      verdicts,
+		PendingReviews:     pendingCount,
+		MemoryHitsTrend:    trend,
+		LiveTasks:          liveTasks,
+		VerdictAccuracyPct: accuracy,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -159,4 +166,22 @@ func (s *Server) queryLiveTasks(ctx context.Context) ([]LiveTask, error) {
 		results = append(results, t)
 	}
 	return results, rows.Err()
+}
+
+func (s *Server) queryVerdictAccuracy(ctx context.Context) (*float64, error) {
+	var pct *float64
+	err := s.DB.Pool.QueryRow(ctx, `
+		SELECT
+			ROUND(
+				100.0 * COUNT(*) FILTER (
+					WHERE (t.verdict = 'fraud' AND tx.is_fraud_label = true)
+					   OR (t.verdict = 'legit' AND tx.is_fraud_label = false)
+				) / NULLIF(COUNT(*) FILTER (WHERE t.verdict IN ('fraud', 'legit')), 0),
+				1
+			)
+		FROM tasks t
+		JOIN transactions tx ON t.transaction_id = tx.id
+		WHERE t.verdict IS NOT NULL
+	`).Scan(&pct)
+	return pct, err
 }

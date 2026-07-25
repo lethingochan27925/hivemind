@@ -13,14 +13,18 @@ type PendingReview struct {
 	TransactionID string  `json:"transaction_id"`
 	Verdict       string  `json:"verdict"`
 	Confidence    float64 `json:"confidence"`
+	Amount        float64 `json:"amount"`
+	RiskScore     float64 `json:"risk_score"`
+	TxnType       string  `json:"txn_type"`
 }
 
 func ListPendingReviews(ctx context.Context, db *cockroach.Client) ([]PendingReview, error) {
 	rows, err := db.Pool.Query(ctx, `
-		SELECT id, transaction_id, verdict, confidence
-		FROM tasks
-		WHERE status = 'pending_review'
-		ORDER BY created_at ASC
+		SELECT t.id, t.transaction_id, t.verdict, t.confidence, tx.amount, tx.risk_score, tx.type
+		FROM tasks t
+		JOIN transactions tx ON t.transaction_id = tx.id
+		WHERE t.status = 'pending_review'
+		ORDER BY t.created_at ASC
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("listing pending reviews: %w", err)
@@ -30,7 +34,7 @@ func ListPendingReviews(ctx context.Context, db *cockroach.Client) ([]PendingRev
 	var reviews []PendingReview
 	for rows.Next() {
 		var r PendingReview
-		if err := rows.Scan(&r.TaskID, &r.TransactionID, &r.Verdict, &r.Confidence); err != nil {
+		if err := rows.Scan(&r.TaskID, &r.TransactionID, &r.Verdict, &r.Confidence, &r.Amount, &r.RiskScore, &r.TxnType); err != nil {
 			return nil, fmt.Errorf("scanning review row: %w", err)
 		}
 		reviews = append(reviews, r)

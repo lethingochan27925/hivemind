@@ -124,3 +124,35 @@ func (s *Server) queryIncidents(ctx context.Context) ([]IncidentEvent, error) {
 }
 
 var _ = cwtypes.StateValueOk
+
+// SimulateCrash de mo phong 1 task bi "crash" bang cach dat heartbeat_at
+// ve qua khu, de Heartbeat Reaper tu phat hien va re-queue o chu ky tiep theo.
+// Chi dung cho demo, khong phai hanh vi production that.
+func (s *Server) SimulateCrash(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	ctx := r.Context()
+
+	var taskID string
+	err := s.DB.Pool.QueryRow(ctx, `
+		UPDATE tasks
+		SET heartbeat_at = now() - INTERVAL '10 minutes'
+		WHERE status = 'investigating'
+		ORDER BY claimed_at DESC
+		LIMIT 1
+		RETURNING id
+	`).Scan(&taskID)
+
+	if err != nil {
+		http.Error(w, "no investigating task found to simulate a crash on", http.StatusNotFound)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "ok",
+		"task_id": taskID,
+		"message": "heartbeat backdated - the reaper will re-queue this task on its next cycle",
+	})
+}
