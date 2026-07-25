@@ -42,3 +42,11 @@ output "next_steps" {
 output "github_actions_role_arn" {
   value = module.github_oidc.role_arn
 }
+
+output "dashboard_api_url" {
+  value = try(module.lambda.function_urls["dashboard-api"], null)
+}
+
+output "dashboard_bucket_name" {
+  value = module.storage.dashboard_bucket_name
+}

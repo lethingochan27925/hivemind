@@ -54,15 +54,10 @@ variable "schedules" {
 
 variable "function_url_services" {
   description = "Service can Function URL (HTTP endpoint)"
-  type        = list(string)
-  default     = []
+  type        = map(string)
+  default     = {}
 }
 
-variable "function_url_auth_type" {
-  description = "AWS_IAM | NONE"
-  type        = string
-  default     = "AWS_IAM"
-}
 
 variable "log_retention_days" {
   description = "So ngay giu CloudWatch logs"

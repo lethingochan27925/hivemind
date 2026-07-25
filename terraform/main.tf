@@ -164,8 +164,11 @@ module "lambda" {
     }
   }
 
-  function_url_services  = ["scoring-api", "scoring-python", "dashboard-api"]
-  function_url_auth_type = var.scoring_api_url_auth_type
+  function_url_services = {
+    "scoring-api"    = var.scoring_api_url_auth_type
+    "scoring-python" = var.scoring_api_url_auth_type
+    "dashboard-api"  = "NONE"
+  }
 
   canary_services = ["agent-worker", "scoring-api", "scoring-python", "dashboard-api"]
 }

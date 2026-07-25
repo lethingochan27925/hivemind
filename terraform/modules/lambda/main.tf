@@ -99,9 +99,9 @@ resource "aws_lambda_permission" "eventbridge" {
 # Function URLs
 # =============================================================================
 resource "aws_lambda_function_url" "endpoints" {
-  for_each = toset(var.function_url_services)
+  for_each = var.function_url_services
 
   function_name      = aws_lambda_function.functions[each.key].function_name
   qualifier          = aws_lambda_alias.live[each.key].name
-  authorization_type = var.function_url_auth_type
+  authorization_type = each.value
 }
