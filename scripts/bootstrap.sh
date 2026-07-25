@@ -201,7 +201,34 @@ log "Applying full infrastructure (Lambda functions now have images)"
 cd "$TERRAFORM_DIR"
 terraform apply -auto-approve
 ROLE_ARN=$(terraform output -raw github_actions_role_arn)
+DASHBOARD_API_URL=$(terraform output -raw dashboard_api_url)
+DASHBOARD_BUCKET=$(terraform output -raw dashboard_bucket_name)
+CLOUDFRONT_ID=$(aws cloudfront list-distributions \
+  --query "DistributionList.Items[?Comment=='${PROJECT}-${ENVIRONMENT}-dashboard'].Id" \
+  --output text)
 cd - >/dev/null
+
+ok "Backend infrastructure ready"
+
+log "Building dashboard frontend (Next.js static export)"
+cd dashboard
+echo "NEXT_PUBLIC_DASHBOARD_API_URL=${DASHBOARD_API_URL}" > .env.production.local
+npm install --no-audit --no-fund >/dev/null
+npm run build >/dev/null
+cd - >/dev/null
+ok "Frontend built with API URL: ${DASHBOARD_API_URL}"
+
+log "Uploading dashboard to S3"
+aws s3 sync dashboard/out "s3://${DASHBOARD_BUCKET}" --delete >/dev/null
+ok "Dashboard uploaded to s3://${DASHBOARD_BUCKET}"
+
+if [ -n "$CLOUDFRONT_ID" ]; then
+  log "Invalidating CloudFront cache"
+  aws cloudfront create-invalidation --distribution-id "$CLOUDFRONT_ID" --paths "/*" >/dev/null
+  ok "CloudFront cache invalidated"
+else
+  warn "Could not find CloudFront distribution to invalidate"
+fi
 
 ok "Bootstrap complete"
 
