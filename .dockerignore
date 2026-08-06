@@ -20,3 +20,4 @@ terraform/*.tfstate*
 .env.production.local
 README.md
 scope.md
+terraform/modules/bootstrap/.terraform

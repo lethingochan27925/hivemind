@@ -50,3 +50,4 @@ terraform-full-review.txt
 # OS
 .DS_Store
 Thumbs.db
+terraform/modules/bootstrap/.terraform
