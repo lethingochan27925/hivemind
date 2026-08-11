@@ -81,6 +81,30 @@ resource "aws_iam_role_policy" "github_actions" {
         Resource = "*"
       },
       {
+        Sid    = "DashboardS3Deploy"
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:GetObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          "arn:aws:s3:::${var.project}-${var.environment}-dashboard",
+          "arn:aws:s3:::${var.project}-${var.environment}-dashboard/*"
+        ]
+      },
+      {
+        Sid    = "DashboardCloudFront"
+        Effect = "Allow"
+        Action = [
+          "cloudfront:CreateInvalidation",
+          "cloudfront:GetInvalidation",
+          "cloudfront:ListDistributions"
+        ]
+        Resource = "*"
+      },
+      {
         Sid    = "TerraformState"
         Effect = "Allow"
         Action = [

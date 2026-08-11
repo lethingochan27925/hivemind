@@ -1,0 +1,46 @@
+name: Smoke Test
+
+# Post-deploy health gate: after staging is applied, hit the live dashboard-api
+# control plane and assert it is healthy AND that the read-only SQL guard still
+# rejects mutating statements. Wires test/integration/api_smoke.sh into CD, so a
+# broken control plane turns the pipeline red before canary shifts any traffic.
+
+on:
+  workflow_run:
+    workflows: ["Deploy Staging"]
+    types: [completed]
+    branches: [main]
+
+env:
+  AWS_REGION: ap-southeast-1
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  smoke:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.9.0'
+
+      - name: Resolve dashboard-api URL
+        id: tf
+        working-directory: terraform
+        run: |
+          terraform init
+          echo "api_url=$(terraform output -raw dashboard_api_url)" >> "$GITHUB_OUTPUT"
+
+      - name: Control-plane smoke test
+        run: bash test/integration/api_smoke.sh "${{ steps.tf.outputs.api_url }}"

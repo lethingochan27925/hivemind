@@ -1,5 +1,9 @@
 # HiveMind — Distributed Memory & Control Plane for Production Agent Fleets
 
+[![CI](https://github.com/lethingochan27925/hivemind/actions/workflows/ci.yml/badge.svg)](https://github.com/lethingochan27925/hivemind/actions/workflows/ci.yml)
+[![Security](https://github.com/lethingochan27925/hivemind/actions/workflows/security.yml/badge.svg)](https://github.com/lethingochan27925/hivemind/actions/workflows/security.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
 > **Hackathon:** CockroachDB x AWS — Build with Agentic Memory
 > **Deadline:** 18/08/2026, 5:00 PM ET
 > **Giai thuong:** $8,750 USD (1st: $5,000, 2nd: $2,500, 3rd: $1,250)

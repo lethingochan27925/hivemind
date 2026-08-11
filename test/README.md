@@ -13,10 +13,12 @@ test/
 │   ├── TC-CONTROL-PLANE.md  control API + read-only DB console guard
 │   ├── TC-DASHBOARD.md      the 8 dashboard pages
 │   ├── TC-SCORING.md        risk routing thresholds + auto-decision
-│   └── TC-DATA-INTEGRITY.md schema constraints as a safety net
+│   ├── TC-DATA-INTEGRITY.md schema constraints as a safety net
+│   └── TC-CICD.md           CI/CD pipeline & DevOps invariants
 └── integration/
     ├── reasoning_test.go    runnable Go — balance signal → verdict mapping (no cloud)
     ├── api_smoke.sh         runnable curl — smoke the deployed dashboard-api
+    ├── pipeline_test.sh     runnable — assert the CI/CD pipeline invariants (no cloud)
     └── doc.go               makes the dir a normal buildable package
 ```
 
@@ -46,6 +48,7 @@ DB-backed integration tests (`internal/memory/*_integration_test.go`) cover SKIP
 ```bash
 # 1. Everything hermetic — no AWS, no DB. This is the CI gate.
 go test ./...
+bash test/integration/pipeline_test.sh      # assert the CI/CD pipeline definitions
 
 # 2. Just the correctness core (verdict discriminator + injection)
 go test ./internal/agent/ ./test/integration/ ./internal/scorer/ -v

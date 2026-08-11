@@ -1,0 +1,78 @@
+name: Deploy Dashboard
+
+# Continuous delivery for the static control-plane dashboard (the required public
+# demo URL). Builds the Next.js static export with the live API URL baked in,
+# syncs it to S3, and invalidates CloudFront. Runs when the dashboard changes.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'dashboard/**'
+      - '.github/workflows/deploy-dashboard.yml'
+  workflow_dispatch: {}
+
+env:
+  AWS_REGION: ap-southeast-1
+  PROJECT: hivemind
+  ENVIRONMENT: dev
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-dashboard
+  cancel-in-progress: true
+
+jobs:
+  deploy-dashboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.9.0'
+
+      - name: Read infra outputs (API URL + bucket)
+        id: tf
+        working-directory: terraform
+        run: |
+          terraform init
+          echo "api_url=$(terraform output -raw dashboard_api_url)" >> "$GITHUB_OUTPUT"
+          echo "bucket=$(terraform output -raw dashboard_bucket_name)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Build static dashboard
+        working-directory: dashboard
+        env:
+          NEXT_PUBLIC_DASHBOARD_API_URL: ${{ steps.tf.outputs.api_url }}
+        run: |
+          npm ci
+          npm run build
+
+      - name: Sync to S3
+        run: aws s3 sync dashboard/out "s3://${{ steps.tf.outputs.bucket }}" --delete
+
+      - name: Invalidate CloudFront
+        run: |
+          DIST_ID=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Comment=='${PROJECT}-${ENVIRONMENT}-dashboard'].Id" \
+            --output text)
+          if [ -z "$DIST_ID" ] || [ "$DIST_ID" = "None" ]; then
+            echo "::error::CloudFront distribution not found"; exit 1
+          fi
+          aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths '/*'
+          echo "Dashboard deployed and CloudFront ($DIST_ID) invalidated."
