@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { VerdictDonut } from "@/components/charts/verdict-donut";
 import { AreaTrend } from "@/components/charts/area-trend";
+import { LearningCurve } from "@/components/charts/learning-curve";
 import { FleetControl } from "@/components/control/fleet-control";
 import { ShieldAlert, ShieldCheck, Flag, ClipboardList, Cpu } from "lucide-react";
 
@@ -30,6 +31,13 @@ export default function OverviewPage() {
   const trend =
     data?.memory_hits_trend?.map((p) => ({
       hour: p.hour_bucket,
+      hits: Math.round(p.avg_memory_hits * 100) / 100,
+    })) ?? [];
+
+  const curve =
+    data?.learning_curve?.map((p) => ({
+      hour: p.hour_bucket,
+      latency: Math.round(p.avg_latency_ms),
       hits: Math.round(p.avg_memory_hits * 100) / 100,
     })) ?? [];
 
@@ -118,22 +126,40 @@ export default function OverviewPage() {
           </Panel>
         </div>
 
-        {/* Memory recall trend */}
-        <Panel
-          title="Memory recall"
-          subtitle="avg similar cases retrieved per investigation, last 24h"
-        >
-          {trend.length > 0 ? (
-            <AreaTrend data={trend} xKey="hour" yKey="hits" color={C.blue} unit=" hits" />
-          ) : (
-            <div className="h-[150px]">
-              <EmptyState
-                message="No recall data in the last 24h"
-                hint="Each investigation records how many past cases the vector index returned."
-              />
-            </div>
-          )}
-        </Panel>
+        {/* Learning curve + memory recall trend */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <Panel
+            title="Fleet learning curve"
+            subtitle="as shared memory grows: recall rises, reasoning latency falls"
+          >
+            {curve.length > 1 ? (
+              <LearningCurve data={curve} />
+            ) : (
+              <div className="h-[220px]">
+                <EmptyState
+                  message="Not enough history yet"
+                  hint="Run the fleet for a while - each hour plots avg memory hits vs avg Bedrock latency, the measurable payoff of agentic memory."
+                />
+              </div>
+            )}
+          </Panel>
+
+          <Panel
+            title="Memory recall"
+            subtitle="avg similar cases retrieved per investigation, last 24h"
+          >
+            {trend.length > 0 ? (
+              <AreaTrend data={trend} xKey="hour" yKey="hits" color={C.blue} unit=" hits" />
+            ) : (
+              <div className="h-[150px]">
+                <EmptyState
+                  message="No recall data in the last 24h"
+                  hint="Each investigation records how many past cases the vector index returned."
+                />
+              </div>
+            )}
+          </Panel>
+        </div>
 
         {/* Live fleet */}
         <Panel

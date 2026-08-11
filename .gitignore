@@ -44,6 +44,7 @@ install-*.sh
 patch-*.py
 **/.redesign-backup/
 .gitignore.bak
+backups
 
 # ===== OS / editor =====
 .DS_Store

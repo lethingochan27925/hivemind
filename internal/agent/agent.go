@@ -109,6 +109,16 @@ func (w *Worker) processTask(ctx context.Context, task *memory.Task) {
 	if resuming {
 		fmt.Printf("  Resuming from step=%s (retry_count=%d)\n", *task.Step, sp.RetryCount)
 		sp.RetryCount++
+		// Ghi audit task_resumed: enum co san nhung truoc day khong noi nao ghi,
+		// khien cau chuyen crash -> requeue -> resume dut o buoc cuoi.
+		resumeNote := fmt.Sprintf("resumed at step=%s from scratchpad (retry #%d)", *task.Step, sp.RetryCount)
+		w.writeAudit(ctx, memory.AuditEntry{
+			TaskID:        task.ID,
+			TransactionID: task.TransactionID,
+			AgentID:       w.ID,
+			Action:        "task_resumed",
+			Reasoning:     &resumeNote,
+		})
 	}
 
 	txn, err := w.mcp.GetTransaction(task.TransactionID)
@@ -218,12 +228,19 @@ func (w *Worker) stepMemoryRecall(ctx context.Context, taskID string, txn *mcp.T
 	// memory co lam agent tot hon hay khong, va la nguon cua bieu do
 	// "Memory recall hits" tren dashboard. Thieu no thi ca hai deu rong.
 	hitCount := len(memoryHits)
+	// Similarity tung hit (1 - distance) cung duoc ghi: day la du lieu goc cho
+	// Decision Trace tren dashboard - verdict dua tren memory nao, gan den dau.
+	similarities := make([]float64, 0, len(memoryHits))
+	for _, h := range memoryHits {
+		similarities = append(similarities, 1.0-h.Distance)
+	}
 	w.writeAudit(ctx, memory.AuditEntry{
-		TaskID:        taskID,
-		TransactionID: txn.ID,
-		AgentID:       w.ID,
-		Action:        "memory_recall",
-		MemoryHits:    &hitCount,
+		TaskID:           taskID,
+		TransactionID:    txn.ID,
+		AgentID:          w.ID,
+		Action:           "memory_recall",
+		MemoryHits:       &hitCount,
+		SimilarityScores: similarities,
 	})
 
 	return memoryHits

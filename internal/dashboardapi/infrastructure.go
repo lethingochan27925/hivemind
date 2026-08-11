@@ -22,6 +22,8 @@ type IncidentEvent struct {
 	Timestamp   string `json:"timestamp"`
 	Service     string `json:"service"`
 	Description string `json:"description"`
+	TaskID      string `json:"task_id"`
+	Action      string `json:"action"`
 }
 
 type InfrastructureResponse struct {
@@ -49,7 +51,7 @@ func (s *Server) GetInfrastructure(w http.ResponseWriter, r *http.Request) {
 
 	healths := make([]ServiceHealth, 0, len(services))
 	for _, svc := range services {
-		alarmName := fmt.Sprintf("hivemind-dev-%s-errors", svc)
+		alarmName := fmt.Sprintf("%s-%s-errors", namePrefix(), svc)
 		state, err := getAlarmState(ctx, cwClient, alarmName)
 		if err != nil {
 			state = "UNKNOWN"
@@ -94,9 +96,9 @@ func getAlarmState(ctx context.Context, client *cloudwatch.Client, alarmName str
 
 func (s *Server) queryIncidents(ctx context.Context) ([]IncidentEvent, error) {
 	rows, err := s.DB.Pool.Query(ctx, `
-		SELECT created_at, agent_id, reasoning
+		SELECT created_at, agent_id, reasoning, task_id, action
 		FROM audit_log
-		WHERE action = 'task_requeued'
+		WHERE action IN ('task_requeued', 'task_resumed')
 		  AND created_at >= now() - INTERVAL '24 hours'
 		ORDER BY created_at DESC
 		LIMIT 20
@@ -111,7 +113,7 @@ func (s *Server) queryIncidents(ctx context.Context) ([]IncidentEvent, error) {
 		var e IncidentEvent
 		var reasoning *string
 		var createdAt time.Time
-		if err := rows.Scan(&createdAt, &e.Service, &reasoning); err != nil {
+		if err := rows.Scan(&createdAt, &e.Service, &reasoning, &e.TaskID, &e.Action); err != nil {
 			return nil, err
 		}
 		e.Timestamp = createdAt.Format(time.RFC3339)
@@ -139,7 +141,7 @@ func (s *Server) SimulateCrash(w http.ResponseWriter, r *http.Request) {
 	err := s.DB.Pool.QueryRow(ctx, `
 		UPDATE tasks
 		SET heartbeat_at = now() - INTERVAL '10 minutes'
-		WHERE status = 'investigating'
+		WHERE status IN ('investigating', 'claimed')
 		ORDER BY claimed_at DESC
 		LIMIT 1
 		RETURNING id

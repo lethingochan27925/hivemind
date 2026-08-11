@@ -20,12 +20,16 @@ type TransactionSummary struct {
 }
 
 type AuditStep struct {
-	Action    string  `json:"action"`
-	Reasoning *string `json:"reasoning,omitempty"`
-	TokensIn  *int    `json:"tokens_in,omitempty"`
-	TokensOut *int    `json:"tokens_out,omitempty"`
-	LatencyMs *int    `json:"latency_ms,omitempty"`
-	CreatedAt string  `json:"created_at"`
+	Action           string    `json:"action"`
+	AgentID          string    `json:"agent_id"`
+	Reasoning        *string   `json:"reasoning,omitempty"`
+	MemoryHits       *int      `json:"memory_hits,omitempty"`
+	SimilarityScores []float64 `json:"similarity_scores,omitempty"`
+	TokensIn         *int      `json:"tokens_in,omitempty"`
+	TokensOut        *int      `json:"tokens_out,omitempty"`
+	LatencyMs        *int      `json:"latency_ms,omitempty"`
+	BedrockModel     *string   `json:"bedrock_model,omitempty"`
+	CreatedAt        string    `json:"created_at"`
 }
 
 func (s *Server) ListTransactions(w http.ResponseWriter, r *http.Request) {
@@ -88,7 +92,8 @@ func (s *Server) GetTransactionAudit(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	rows, err := s.DB.Pool.Query(ctx, `
-		SELECT action, reasoning, tokens_in, tokens_out, latency_ms, created_at
+		SELECT action, agent_id, reasoning, memory_hits, similarity_scores,
+		       tokens_in, tokens_out, latency_ms, bedrock_model, created_at
 		FROM audit_log
 		WHERE transaction_id = $1
 		ORDER BY created_at ASC
@@ -103,7 +108,8 @@ func (s *Server) GetTransactionAudit(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var a AuditStep
 		var createdAt time.Time
-		if err := rows.Scan(&a.Action, &a.Reasoning, &a.TokensIn, &a.TokensOut, &a.LatencyMs, &createdAt); err != nil {
+		if err := rows.Scan(&a.Action, &a.AgentID, &a.Reasoning, &a.MemoryHits, &a.SimilarityScores,
+			&a.TokensIn, &a.TokensOut, &a.LatencyMs, &a.BedrockModel, &createdAt); err != nil {
 			http.Error(w, "failed to scan audit step", http.StatusInternalServerError)
 			return
 		}

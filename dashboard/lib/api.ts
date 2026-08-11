@@ -28,11 +28,19 @@ export interface LiveTask {
   claimed_at: string;
 }
 
+export interface LearningPoint {
+  hour_bucket: string;
+  avg_memory_hits: number;
+  avg_latency_ms: number;
+  verdicts: number;
+}
+
 export interface OverviewData {
   verdicts_today: VerdictCount[] | null;
   pending_reviews: number;
   memory_hits_trend: MemoryHitPoint[] | null;
   live_tasks: LiveTask[] | null;
+  learning_curve: LearningPoint[] | null;
   verdict_accuracy_pct?: number;
 }
 
@@ -89,10 +97,14 @@ export interface Transaction {
 
 export interface AuditStep {
   action: string;
+  agent_id?: string;
   reasoning?: string;
+  memory_hits?: number;
+  similarity_scores?: number[];
   tokens_in?: number;
   tokens_out?: number;
   latency_ms?: number;
+  bedrock_model?: string;
   created_at: string;
 }
 
@@ -105,6 +117,8 @@ export interface IncidentEvent {
   timestamp: string;
   service: string;
   description: string;
+  task_id?: string;
+  action?: string;
 }
 
 export interface InfrastructureData {

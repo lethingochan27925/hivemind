@@ -6,21 +6,13 @@ import { Panel } from "@/components/ui/panel";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
+import { DecisionTrace } from "@/components/control/decision-trace";
 
 const money = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
 const tierTone = (t: string) => (t === "high" ? "red" : t === "medium" ? "yellow" : "green");
 const verdictTone = (v?: string) =>
   v === "fraud" ? "red" : v === "escalate" ? "yellow" : v === "legit" ? "green" : "default";
-
-const actionTone = (a: string) => {
-  if (a.startsWith("verdict_fraud") || a === "task_failed") return "border-red/50";
-  if (a.startsWith("verdict_legit") || a === "auto_approve") return "border-green/50";
-  if (a.startsWith("verdict_escalate")) return "border-yellow/50";
-  if (a === "memory_recall") return "border-blue/50";
-  if (a === "bedrock_reasoning") return "border-purple/50";
-  return "border-border-strong";
-};
 
 const FILTERS = ["", "low", "medium", "high"];
 
@@ -154,36 +146,21 @@ export default function TransactionsPage() {
           )}
         </Panel>
 
-        <Panel title="Audit trail" subtitle={selected ? selected.id.slice(0, 8) : undefined}>
+        <Panel
+          title="Decision trace"
+          subtitle={selected ? `case ${selected.id.slice(0, 8)} - full anatomy of the verdict` : undefined}
+        >
           {!selected ? (
             <EmptyState
               message="Select a transaction"
-              hint="Every agent action - memory recall, MCP query, reasoning, verdict - is recorded."
+              hint="See the anatomy of a verdict: recalled memories with real vector similarity, model cost, and any crash/resume - all from the append-only audit log."
             />
           ) : audit.length === 0 ? (
             <EmptyState message="No audit steps recorded" />
           ) : (
-            <ol className="relative space-y-3 pl-1">
-              {audit.map((step, i) => (
-                <li key={i} className={`border-l-2 pl-3 pb-1 ${actionTone(step.action)}`}>
-                  <div className="text-[14px] text-text-primary font-medium">
-                    {step.action.replace(/_/g, " ")}
-                  </div>
-                  {step.reasoning && (
-                    <div className="text-[13px] text-text-secondary mt-0.5 leading-relaxed">
-                      {step.reasoning}
-                    </div>
-                  )}
-                  <div className="text-[12px] text-text-tertiary mt-1 flex flex-wrap gap-x-3 gap-y-0.5 tnum">
-                    {step.tokens_in != null && (
-                      <span>{(step.tokens_in + (step.tokens_out ?? 0)).toLocaleString()} tok</span>
-                    )}
-                    {step.latency_ms != null && <span>{step.latency_ms} ms</span>}
-                    <span>{new Date(step.created_at).toLocaleTimeString()}</span>
-                  </div>
-                </li>
-              ))}
-            </ol>
+            <div className="max-h-[70vh] overflow-y-auto pr-1">
+              <DecisionTrace steps={audit} />
+            </div>
           )}
         </Panel>
       </div>

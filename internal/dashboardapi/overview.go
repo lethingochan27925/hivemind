@@ -19,6 +19,13 @@ type MemoryHitPoint struct {
 	AvgHits    float64 `json:"avg_memory_hits"`
 }
 
+type LearningPoint struct {
+	HourBucket   string  `json:"hour_bucket"`
+	AvgHits      float64 `json:"avg_memory_hits"`
+	AvgLatencyMs float64 `json:"avg_latency_ms"`
+	Verdicts     int     `json:"verdicts"`
+}
+
 type LiveTask struct {
 	TaskID    string    `json:"task_id"`
 	ClaimedBy string    `json:"claimed_by"`
@@ -29,6 +36,7 @@ type OverviewResponse struct {
 	VerdictsToday      []VerdictCount   `json:"verdicts_today"`
 	PendingReviews     int              `json:"pending_reviews"`
 	MemoryHitsTrend    []MemoryHitPoint `json:"memory_hits_trend"`
+	LearningCurve      []LearningPoint  `json:"learning_curve"`
 	LiveTasks          []LiveTask       `json:"live_tasks"`
 	VerdictAccuracyPct *float64         `json:"verdict_accuracy_pct,omitempty"`
 }
@@ -68,6 +76,11 @@ func (s *Server) GetOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	curve, err := s.queryLearningCurve(ctx)
+	if err != nil {
+		log.Printf("querying learning curve: %v", err)
+	}
+
 	accuracy, err := s.queryVerdictAccuracy(ctx)
 	if err != nil {
 		log.Printf("querying verdict accuracy: %v", err)
@@ -77,6 +90,7 @@ func (s *Server) GetOverview(w http.ResponseWriter, r *http.Request) {
 		VerdictsToday:      verdicts,
 		PendingReviews:     pendingCount,
 		MemoryHitsTrend:    trend,
+		LearningCurve:      curve,
 		LiveTasks:          liveTasks,
 		VerdictAccuracyPct: accuracy,
 	}
@@ -138,6 +152,37 @@ func (s *Server) queryMemoryHitsTrend(ctx context.Context) ([]MemoryHitPoint, er
 	for rows.Next() {
 		var p MemoryHitPoint
 		if err := rows.Scan(&p.HourBucket, &p.AvgHits); err != nil {
+			return nil, err
+		}
+		results = append(results, p)
+	}
+	return results, rows.Err()
+}
+
+// queryLearningCurve do "fleet co khon len khong": moi gio, avg memory hits
+// (tang khi case_memory day len) va avg latency reasoning (giam khi agent
+// recall duoc kinh nghiem) - bang chung dinh luong cua agentic memory.
+func (s *Server) queryLearningCurve(ctx context.Context) ([]LearningPoint, error) {
+	rows, err := s.DB.Pool.Query(ctx, `
+		SELECT
+			to_char(created_at, 'HH24:00') AS hour_bucket,
+			COALESCE(AVG(memory_hits) FILTER (WHERE action = 'memory_recall'), 0) AS avg_hits,
+			COALESCE(AVG(latency_ms) FILTER (WHERE action = 'bedrock_reasoning'), 0) AS avg_latency,
+			COUNT(*) FILTER (WHERE action LIKE 'verdict_%') AS verdicts
+		FROM audit_log
+		WHERE created_at >= now() - INTERVAL '24 hours'
+		GROUP BY hour_bucket
+		ORDER BY hour_bucket
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []LearningPoint
+	for rows.Next() {
+		var p LearningPoint
+		if err := rows.Scan(&p.HourBucket, &p.AvgHits, &p.AvgLatencyMs, &p.Verdicts); err != nil {
 			return nil, err
 		}
 		results = append(results, p)

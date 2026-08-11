@@ -10,7 +10,7 @@ func TestRiskTier(t *testing.T) {
 		score float64
 		want  string
 	}{
-		{-0.5, "low"},   // clamped-low nonsense still routes low
+		{-0.5, "low"}, // clamped-low nonsense still routes low
 		{0.0, "low"},
 		{0.0009, "low"},
 		{LowThreshold, "medium"}, // 0.001 is NOT < 0.001 -> medium (boundary is investigate)

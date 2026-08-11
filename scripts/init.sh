@@ -264,6 +264,7 @@ else
 fi
 
 ok "Init complete"
+bash scripts/refresh-urls.sh || true
 echo ""
 echo "  Dashboard : $(terraform -chdir=terraform output -raw dashboard_url)"
 echo "  API       : ${DASHBOARD_API_URL}"
