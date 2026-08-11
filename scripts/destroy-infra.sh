@@ -96,4 +96,4 @@ fi
 
 echo ""
 echo "Destroy complete. To rebuild from scratch, run:"
-echo "  bash scripts/bootstrap.sh"
+echo "  bash scripts/init.sh"

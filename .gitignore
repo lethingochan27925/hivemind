@@ -20,7 +20,7 @@ out/
 .vercel/
 *-debug.log*
 
-# ===== Go / Lambda build output (scripts/bootstrap.sh is NOT affected) =====
+# ===== Go / Lambda build output (scripts/init.sh is NOT affected) =====
 *.exe
 *.exe~
 *.test
