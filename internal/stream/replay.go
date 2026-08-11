@@ -54,34 +54,27 @@ func InsertTransactions(ctx context.Context, db *cockroach.Client, txns []Scored
 	return inserted, nil
 }
 
-func InsertMediumTasks(ctx context.Context, db *cockroach.Client) (int, error) {
-	rows, err := db.Pool.Query(ctx, `
-		SELECT id, risk_score FROM transactions
-		WHERE risk_tier = 'medium'
-	`)
+// InsertMediumTasks tao task cho cac transaction medium-tier chua co task.
+// Dung mot cau lenh set-based thay vi N round-trip: dispatcher chay moi phut,
+// quet toan bang roi insert tung dong se timeout khi du lieu lon.
+// Tra ve so task THUC SU duoc tao - ban cu dem ca dong bi ON CONFLICT bo qua
+// nen luon bao cao sai.
+func InsertMediumTasks(ctx context.Context, db *cockroach.Client, batchSize int) (int, error) {
+	tag, err := db.Pool.Exec(ctx, `
+		INSERT INTO tasks (transaction_id, risk_score, status)
+		SELECT id, risk_score, 'pending'
+		FROM (
+			SELECT tx.id, tx.risk_score
+			FROM transactions tx
+			LEFT JOIN tasks t ON t.transaction_id = tx.id
+			WHERE tx.risk_tier = 'medium' AND t.id IS NULL
+			ORDER BY tx.arrived_at ASC
+			LIMIT $1
+		) AS candidates
+		ON CONFLICT (transaction_id) DO NOTHING
+	`, batchSize)
 	if err != nil {
-		return 0, fmt.Errorf("querying medium transactions: %w", err)
+		return 0, fmt.Errorf("inserting medium tasks: %w", err)
 	}
-	defer rows.Close()
-
-	count := 0
-	for rows.Next() {
-		var txnID string
-		var riskScore float64
-		if err := rows.Scan(&txnID, &riskScore); err != nil {
-			return count, fmt.Errorf("scanning transaction: %w", err)
-		}
-
-		taskID := uuid.New().String()
-		_, err := db.Pool.Exec(ctx, `
-			INSERT INTO tasks (id, transaction_id, risk_score, status, created_at)
-			VALUES ($1, $2, $3, 'pending', now())
-			ON CONFLICT (transaction_id) DO NOTHING
-		`, taskID, txnID, riskScore)
-		if err != nil {
-			return count, fmt.Errorf("inserting task: %w", err)
-		}
-		count++
-	}
-	return count, nil
+	return int(tag.RowsAffected()), nil
 }

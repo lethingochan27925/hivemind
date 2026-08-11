@@ -4,14 +4,20 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 
+	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	"github.com/awslabs/aws-lambda-go-api-proxy/httpadapter"
 	"github.com/lethingochan27925/hivemind/internal/scorer"
 )
+
+const defaultPort = "8080"
 
 type scoreHandler struct {
 	pythonClient *scorer.Client
@@ -27,7 +33,7 @@ func (h *scoreHandler) handle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	riskScore, err := h.pythonClient.Score(req)
+	riskScore, err := h.pythonClient.Score(r.Context(), req)
 	if err != nil {
 		log.Printf("scoring error: %v", err)
 		http.Error(w, "scoring failed", http.StatusInternalServerError)
@@ -75,20 +81,53 @@ func resolveScoringEndpoint() string {
 
 func strPtr(s string) *string { return &s }
 
+// newScoringClient chon che do xac thuc theo moi truong: local goi thang service
+// Python khong qua IAM; tren Lambda thi Function URL cua scoring-python dung auth
+// AWS_IAM nen request phai duoc ky bang credential cua execution role.
+func newScoringClient(ctx context.Context, endpoint string) (*scorer.Client, error) {
+	if os.Getenv("AWS_LAMBDA_FUNCTION_NAME") == "" {
+		return scorer.NewClient(endpoint), nil
+	}
+
+	awsCfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("loading AWS config for request signing: %w", err)
+	}
+	return scorer.NewSignedClient(awsCfg, endpoint), nil
+}
+
+func buildMux(h *scoreHandler) *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/score", h.handle)
+	return mux
+}
+
 func main() {
 	pythonEndpoint := resolveScoringEndpoint()
 
-	handler := &scoreHandler{
-		pythonClient: scorer.NewClient(pythonEndpoint),
+	client, err := newScoringClient(context.Background(), pythonEndpoint)
+	if err != nil {
+		log.Fatalf("initializing scoring client: %v", err)
 	}
+	mux := buildMux(&scoreHandler{pythonClient: client})
 
-	http.HandleFunc("/score", handler.handle)
+	// Tren Lambda that: chay qua Lambda Runtime API bang httpadapter, giu nguyen
+	// http.Handler da viet. Truoc day ham nay goi ListenAndServe nen Function URL
+	// khong bao gio nhan duoc handler nao - moi request deu that bai.
+	if os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != "" {
+		adapter := httpadapter.NewV2(mux)
+		log.Printf("Scoring API on Lambda, forwarding to %s", pythonEndpoint)
+		lambda.Start(func(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+			return adapter.ProxyWithContext(ctx, req)
+		})
+		return
+	}
 
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080"
+		port = defaultPort
 	}
 
 	log.Printf("Scoring API listening on :%s, forwarding to %s", port, pythonEndpoint)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	log.Fatal(http.ListenAndServe(":"+port, mux))
 }

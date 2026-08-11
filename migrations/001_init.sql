@@ -23,10 +23,10 @@ CREATE TABLE IF NOT EXISTS transactions (
   CONSTRAINT tier_check CHECK (risk_tier IN ('low', 'medium', 'high'))
 );
 
-CREATE INDEX ON transactions (risk_tier, arrived_at DESC);
-CREATE INDEX ON transactions (name_orig);
-CREATE INDEX ON transactions (name_dest);
-CREATE INDEX ON transactions (step, type);
+CREATE INDEX IF NOT EXISTS transactions_risk_tier_arrived_at_idx ON transactions (risk_tier, arrived_at DESC);
+CREATE INDEX IF NOT EXISTS transactions_name_orig_idx ON transactions (name_orig);
+CREATE INDEX IF NOT EXISTS transactions_name_dest_idx ON transactions (name_dest);
+CREATE INDEX IF NOT EXISTS transactions_step_type_idx ON transactions (step, type);
 
 CREATE TABLE IF NOT EXISTS tasks (
   id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -56,11 +56,11 @@ CREATE TABLE IF NOT EXISTS tasks (
   )
 );
 
-CREATE INDEX ON tasks (status, created_at ASC) WHERE status = 'pending';
-CREATE INDEX ON tasks (heartbeat_at) WHERE status IN ('claimed','investigating');
-CREATE INDEX ON tasks (status, completed_at DESC);
-CREATE INDEX ON tasks (verdict, completed_at DESC) WHERE verdict IS NOT NULL;
-CREATE INDEX ON tasks (status) WHERE status = 'pending_review';
+CREATE INDEX IF NOT EXISTS tasks_status_created_at_idx ON tasks (status, created_at ASC) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS tasks_heartbeat_at_idx ON tasks (heartbeat_at) WHERE status IN ('claimed','investigating');
+CREATE INDEX IF NOT EXISTS tasks_status_completed_at_idx ON tasks (status, completed_at DESC);
+CREATE INDEX IF NOT EXISTS tasks_verdict_completed_at_idx ON tasks (verdict, completed_at DESC) WHERE verdict IS NOT NULL;
+CREATE INDEX IF NOT EXISTS tasks_status_idx ON tasks (status) WHERE status = 'pending_review';
 
 CREATE TABLE IF NOT EXISTS case_memory (
   id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -90,10 +90,10 @@ CREATE TABLE IF NOT EXISTS case_memory (
   )
 );
 
-CREATE VECTOR INDEX ON case_memory (embedding) WHERE archived = false;
-CREATE INDEX ON case_memory (transaction_type, verdict, archived);
-CREATE INDEX ON case_memory (pattern_type, verdict) WHERE archived = false;
-CREATE INDEX ON case_memory (salience, last_recalled_at) WHERE archived = false;
+CREATE VECTOR INDEX IF NOT EXISTS case_memory_embedding_idx ON case_memory (embedding) WHERE archived = false;
+CREATE INDEX IF NOT EXISTS case_memory_transaction_type_verdict_archived_idx ON case_memory (transaction_type, verdict, archived);
+CREATE INDEX IF NOT EXISTS case_memory_pattern_type_verdict_idx ON case_memory (pattern_type, verdict) WHERE archived = false;
+CREATE INDEX IF NOT EXISTS case_memory_salience_last_recalled_at_idx ON case_memory (salience, last_recalled_at) WHERE archived = false;
 
 CREATE TABLE IF NOT EXISTS audit_log (
   id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -124,10 +124,10 @@ CREATE TABLE IF NOT EXISTS audit_log (
   )
 );
 
-CREATE INDEX ON audit_log (task_id, created_at ASC);
-CREATE INDEX ON audit_log (agent_id, created_at DESC);
-CREATE INDEX ON audit_log (action, created_at DESC);
-CREATE INDEX ON audit_log (bedrock_model, created_at DESC) WHERE tokens_in IS NOT NULL;
+CREATE INDEX IF NOT EXISTS audit_log_task_id_created_at_idx ON audit_log (task_id, created_at ASC);
+CREATE INDEX IF NOT EXISTS audit_log_agent_id_created_at_idx ON audit_log (agent_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS audit_log_action_created_at_idx ON audit_log (action, created_at DESC);
+CREATE INDEX IF NOT EXISTS audit_log_bedrock_model_created_at_idx ON audit_log (bedrock_model, created_at DESC) WHERE tokens_in IS NOT NULL;
 
 CREATE VIEW IF NOT EXISTS agent_performance AS
 SELECT

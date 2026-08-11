@@ -9,14 +9,18 @@ import {
   Activity,
   ServerCog,
   DollarSign,
+  Database,
+  Network,
 } from "lucide-react";
 
 const navItems = [
-  { href: "/", label: "Overview", icon: LayoutGrid },
+  { href: "/", label: "Mission Control", icon: LayoutGrid },
   { href: "/reviews", label: "Review Queue", icon: ClipboardCheck },
   { href: "/memory", label: "Fleet & Memory", icon: Brain },
   { href: "/transactions", label: "Transactions", icon: Activity },
+  { href: "/database", label: "Database", icon: Database },
   { href: "/cost", label: "Cost", icon: DollarSign },
+  { href: "/architecture", label: "Architecture", icon: Network },
   { href: "/infrastructure", label: "Infrastructure", icon: ServerCog },
 ];
 
@@ -24,30 +28,51 @@ export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="w-52 shrink-0 border-r border-border bg-bg-panel flex flex-col">
-      <div className="h-12 flex items-center px-4 border-b border-border">
-        <span className="text-sm font-medium text-text-primary">HiveMind</span>
+    <aside className="w-60 shrink-0 border-r border-border bg-bg-panel/60 flex flex-col">
+      <div className="h-16 flex items-center gap-3 px-5 border-b border-border">
+        <span className="w-8 h-8 rounded-lg bg-blue/15 border border-blue/30 flex items-center justify-center">
+          <span className="w-2.5 h-2.5 rounded-full bg-blue hm-pulse" />
+        </span>
+        <div className="leading-tight">
+          <div className="text-[17px] font-bold text-text-primary tracking-tight">HiveMind</div>
+          <div className="text-[10px] uppercase tracking-[0.16em] text-text-tertiary">
+            Mission Control
+          </div>
+        </div>
       </div>
-      <nav className="flex-1 py-2">
+
+      <nav className="flex-1 py-3">
         {navItems.map((item) => {
-          const isActive = pathname === item.href;
+          const isActive =
+            item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
           const Icon = item.icon;
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-2 px-4 py-1.5 text-[13px] ${
+              className={`relative flex items-center gap-3 px-5 py-2.5 text-[15px] transition-colors ${
                 isActive
-                  ? "bg-bg-panel-hover text-text-primary"
-                  : "text-text-secondary hover:text-text-primary hover:bg-bg-panel-hover"
+                  ? "text-text-primary bg-bg-panel-hover font-semibold"
+                  : "text-text-secondary hover:text-text-primary hover:bg-bg-panel-hover/50"
               }`}
             >
-              <Icon size={15} strokeWidth={1.5} />
+              {isActive && (
+                <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-blue" />
+              )}
+              <Icon size={18} strokeWidth={1.8} />
               {item.label}
             </Link>
           );
         })}
       </nav>
+
+      <div className="px-5 py-4 border-t border-border text-[12px] text-text-tertiary leading-relaxed">
+        <div className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-green" />
+          CockroachDB · Bedrock · Lambda
+        </div>
+        <div className="mt-1 opacity-70">Agentic memory control plane</div>
+      </div>
     </aside>
   );
 }

@@ -97,7 +97,7 @@ variable "agent_worker_reserved_concurrency" {
 
 variable "scoring_api_timeout_seconds" {
   type    = number
-  default = 30
+  default = 60
 }
 
 variable "scoring_api_memory_mb" {
@@ -243,12 +243,12 @@ variable "cockroachdb_mcp_endpoint" {
 
 variable "scoring_python_timeout_seconds" {
   type    = number
-  default = 30
+  default = 60
 }
 
 variable "scoring_python_memory_mb" {
   type    = number
-  default = 1024
+  default = 3008
 }
 
 variable "salience_decay_timeout_seconds" {
@@ -295,4 +295,15 @@ variable "github_repo" {
 variable "agent_worker_schedule_expression" {
   type    = string
   default = "rate(1 minute)"
+}
+
+variable "cockroachdb_mcp_api_key" {
+  description = "API key cua CockroachDB Managed MCP Server"
+  type        = string
+  sensitive   = true
+}
+
+variable "cockroachdb_cluster_id" {
+  description = "Cluster ID cua CockroachDB Cloud"
+  type        = string
 }

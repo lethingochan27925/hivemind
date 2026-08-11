@@ -47,6 +47,8 @@ jobs:
         env:
           TF_VAR_cockroachdb_connection_string: ${{ secrets.DATABASE_URL }}
           TF_VAR_cockroachdb_mcp_endpoint: ${{ secrets.COCKROACHDB_MCP_ENDPOINT }}
+          TF_VAR_cockroachdb_mcp_api_key: ${{ secrets.COCKROACHDB_MCP_API_KEY }}
+          TF_VAR_cockroachdb_cluster_id: ${{ secrets.COCKROACHDB_CLUSTER_ID }}
           TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
         run: terraform plan -no-color -out=tfplan
         continue-on-error: true
@@ -73,5 +75,7 @@ jobs:
         env:
           TF_VAR_cockroachdb_connection_string: ${{ secrets.DATABASE_URL }}
           TF_VAR_cockroachdb_mcp_endpoint: ${{ secrets.COCKROACHDB_MCP_ENDPOINT }}
+          TF_VAR_cockroachdb_mcp_api_key: ${{ secrets.COCKROACHDB_MCP_API_KEY }}
+          TF_VAR_cockroachdb_cluster_id: ${{ secrets.COCKROACHDB_CLUSTER_ID }}
           TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
         run: terraform apply -auto-approve tfplan

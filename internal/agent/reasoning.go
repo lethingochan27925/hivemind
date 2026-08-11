@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -50,6 +51,23 @@ type verdictJSON struct {
 	Rationale  string  `json:"rationale"`
 }
 
+// balanceSignal la cong cu doi soat so du. So hoc chinh xac lam trong Go thay vi
+// bat LLM tu tinh (model nho lam kem viec nay). Tra ve mot tin hieu PHAN LOAI de
+// agent suy luan - thu ma model nho xu ly tot hon con so tho.
+func balanceSignal(txn *mcp.Transaction) string {
+	drained := math.Abs(txn.OldBalanceOrig-txn.Amount) < 1.0 && txn.NewBalanceOrig < 1.0
+	destCredited := txn.NewBalanceDest >= txn.OldBalanceDest+txn.Amount-1.0
+	switch {
+	case drained && !destCredited:
+		return "DRAIN -- the origin held almost exactly the amount and was emptied to zero, " +
+			"and the destination balance did not rise to receive it. The money left the origin and vanished."
+	case destCredited:
+		return "FUNDS MOVED -- the destination balance rose by about the amount; the money genuinely arrived."
+	default:
+		return "INCONCLUSIVE -- the balances match neither a clean account drain nor a completed transfer."
+	}
+}
+
 func BuildPrompt(txn *mcp.Transaction, memoryHits []string, customerHistory []string) string {
 	var memoryContext, customerContext string
 
@@ -64,30 +82,34 @@ func BuildPrompt(txn *mcp.Transaction, memoryHits []string, customerHistory []st
 
 	nameOrig := SanitizeField(txn.NameOrig, 64)
 	nameDest := SanitizeField(txn.NameDest, 64)
+	balanceCheck := balanceSignal(txn)
 
-	return fmt.Sprintf(`You are a fraud investigation agent. Analyze this transaction independently.
+	return fmt.Sprintf(`You are a fraud investigation agent reviewing a transaction an upstream model could not
+clear automatically. Decide: fraud (auto-block), legit (auto-approve), or escalate (human).
 
-Transaction:
+A balance-reconciliation tool already traced the money for you. Its finding is your PRIMARY
+evidence -- follow it unless the other signals strongly contradict it:
+  >> %s
+
+Mapping:
+- finding starts with DRAIN        -> account-drain fraud signature. verdict = fraud.
+- finding starts with FUNDS MOVED  -> the money genuinely arrived.   verdict = legit.
+- finding starts with INCONCLUSIVE -> you cannot confirm the path.   verdict = escalate.
+
+Transaction (for context):
   type=%s
   amount=%.2f
-  name_orig=%s
-  name_dest=%s
+  name_orig=%s  old_balance_orig=%.2f  new_balance_orig=%.2f
+  name_dest=%s  old_balance_dest=%.2f  new_balance_dest=%.2f
   risk_score=%.3f
-  error_balance_orig=%.2f
-  error_balance_dest=%.2f
 %s%s
-Scoring rules (follow strictly):
-- risk_score < 0.30 AND both errors near 0 -> legit
-- risk_score 0.30-0.60 AND uncertain signals -> escalate
-- risk_score > 0.60 OR large error_balance -> fraud
-
 Respond in JSON only:
 {
   "verdict": "fraud" | "escalate" | "legit",
   "confidence": 0.0-1.0,
   "rationale": "one sentence explanation"
-}`, txn.Type, txn.Amount, nameOrig, nameDest, txn.RiskScore(),
-		txn.ErrorBalanceOrig, txn.ErrorBalanceDest, memoryContext, customerContext)
+}`, balanceCheck, txn.Type, txn.Amount, nameOrig, txn.OldBalanceOrig, txn.NewBalanceOrig,
+		nameDest, txn.OldBalanceDest, txn.NewBalanceDest, txn.RiskScore(), memoryContext, customerContext)
 }
 
 func CallClaude(ctx context.Context, client *bedrock.Client, txn *mcp.Transaction, memoryHits, customerHistory []string) ReasoningResult {

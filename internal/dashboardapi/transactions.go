@@ -102,10 +102,12 @@ func (s *Server) GetTransactionAudit(w http.ResponseWriter, r *http.Request) {
 	var steps []AuditStep
 	for rows.Next() {
 		var a AuditStep
-		if err := rows.Scan(&a.Action, &a.Reasoning, &a.TokensIn, &a.TokensOut, &a.LatencyMs, &a.CreatedAt); err != nil {
+		var createdAt time.Time
+		if err := rows.Scan(&a.Action, &a.Reasoning, &a.TokensIn, &a.TokensOut, &a.LatencyMs, &createdAt); err != nil {
 			http.Error(w, "failed to scan audit step", http.StatusInternalServerError)
 			return
 		}
+		a.CreatedAt = createdAt.Format(time.RFC3339)
 		steps = append(steps, a)
 	}
 

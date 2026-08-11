@@ -1,176 +1,177 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { api, OverviewData } from "@/lib/api";
+import { api } from "@/lib/api";
+import { useLive } from "@/lib/use-live";
 import { Panel } from "@/components/ui/panel";
 import { Stat } from "@/components/ui/stat";
-import { Badge } from "@/components/ui/badge";
-import { PageHeader } from "@/components/ui/page-header";
+import { Meter } from "@/components/ui/meter";
 import { EmptyState } from "@/components/ui/empty-state";
-import { RefreshCw } from "lucide-react";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  CartesianGrid,
-} from "recharts";
+import { PageHeader } from "@/components/ui/page-header";
+import { VerdictDonut } from "@/components/charts/verdict-donut";
+import { AreaTrend } from "@/components/charts/area-trend";
+import { FleetControl } from "@/components/control/fleet-control";
+import { ShieldAlert, ShieldCheck, Flag, ClipboardList, Cpu } from "lucide-react";
+
+const C = { red: "#f2495c", green: "#6ccf8e", yellow: "#f2cc47", blue: "#5794f2" };
 
 export default function OverviewPage() {
-  const [data, setData] = useState<OverviewData | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
-  const [secondsAgo, setSecondsAgo] = useState(0);
+  const { data, error, lastUpdated } = useLive(api.getOverview, 5000);
 
-  useEffect(() => {
-    const load = () => {
-      api
-        .getOverview()
-        .then((d) => {
-          setData(d);
-          setLastRefresh(new Date());
-        })
-        .catch((e) => setError(e.message));
-    };
-    load();
-    const interval = setInterval(load, 5000);
-    return () => clearInterval(interval);
-  }, []);
+  const verdicts = data?.verdicts_today ?? [];
+  const count = (v: string) => verdicts.find((x) => x.verdict === v)?.count ?? 0;
+  const fraud = count("fraud");
+  const legit = count("legit");
+  const escalate = count("escalate");
+  const autoResolved = fraud + legit;
+  const handled = fraud + legit + escalate;
+  const agents = new Set(data?.live_tasks?.map((t) => t.claimed_by) ?? []).size;
+  const accuracy = data?.verdict_accuracy_pct;
 
-  useEffect(() => {
-    if (!lastRefresh) return;
-    const tick = () => {
-      setSecondsAgo(Math.max(0, Math.round((Date.now() - lastRefresh.getTime()) / 1000)));
-    };
-    tick();
-    const interval = setInterval(tick, 1000);
-    return () => clearInterval(interval);
-  }, [lastRefresh]);
-
-  const fraudCount =
-    data?.verdicts_today?.find((v) => v.verdict === "fraud")?.count ?? 0;
-  const legitCount =
-    data?.verdicts_today?.find((v) => v.verdict === "legit")?.count ?? 0;
-  const escalateCount =
-    data?.verdicts_today?.find((v) => v.verdict === "escalate")?.count ?? 0;
-
-  const uniqueAgents = new Set(
-    data?.live_tasks?.map((t) => t.claimed_by) ?? []
-  ).size;
+  const trend =
+    data?.memory_hits_trend?.map((p) => ({
+      hour: p.hour_bucket,
+      hits: Math.round(p.avg_memory_hits * 100) / 100,
+    })) ?? [];
 
   return (
     <div>
       <PageHeader
-        title="Overview"
-        description="Fleet health, verdict breakdown, and live agent activity"
-        actions={
-          <div className="flex items-center gap-3 text-xs text-text-tertiary">
-            {error && <Badge variant="red">API unreachable</Badge>}
-            {lastRefresh && (
-              <span className="flex items-center gap-1.5">
-                <RefreshCw size={12} />
-                Refreshed {secondsAgo}s ago
-              </span>
-            )}
-          </div>
-        }
+        title="Mission Control"
+        description="Fraud-investigation fleet - live verdicts, memory, and throughput"
+        lastUpdated={lastUpdated}
+        error={error}
       />
 
-      <div className="p-4 space-y-3">
-        <div className="grid grid-cols-5 border border-border rounded-sm divide-x divide-border">
-          <Stat label="Fraud detected" value={fraudCount} color="red" />
-          <Stat label="Escalated" value={escalateCount} color="yellow" />
-          <Stat label="Legit" value={legitCount} color="green" />
+      <div className="p-6 space-y-5 hm-enter">
+        {/* KPI row */}
+        <div className="grid grid-cols-2 md:grid-cols-5 border border-border rounded-md divide-y md:divide-y-0 md:divide-x divide-border bg-bg-panel/40">
+          <Stat label="Fraud blocked" value={fraud} color="red" icon={<ShieldAlert size={12} />} />
+          <Stat label="Escalated" value={escalate} color="yellow" icon={<Flag size={12} />} />
+          <Stat label="Cleared" value={legit} color="green" icon={<ShieldCheck size={12} />} />
           <Stat
             label="Pending review"
-            value={data?.pending_reviews ?? "—"}
+            value={data?.pending_reviews ?? "-"}
             color={(data?.pending_reviews ?? 0) > 0 ? "yellow" : "default"}
+            icon={<ClipboardList size={12} />}
           />
-          <Stat label="Active agents" value={uniqueAgents} color="blue" />
+          <Stat label="Active agents" value={agents} color="blue" icon={<Cpu size={12} />} />
         </div>
 
-        {data?.verdict_accuracy_pct != null && (
-          <Panel title="Real-world impact">
-            <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-semibold text-green">
-                {data.verdict_accuracy_pct}%
-              </span>
-              <span className="text-xs text-text-tertiary">
-                verdict accuracy against ground truth labels
-              </span>
+        {/* Fleet control - live operations */}
+        <FleetControl />
+
+        {/* Impact + verdict split */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          <Panel title="Real-world impact" className="lg:col-span-2">
+            <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-6 items-center">
+              <div className="flex flex-col gap-1">
+                <div className="flex items-baseline gap-2">
+                  <span className="tnum text-4xl font-semibold text-green">
+                    {accuracy != null ? `${accuracy}` : "-"}
+                    <span className="text-lg">%</span>
+                  </span>
+                  <span className="text-[14px] text-text-tertiary">verdict accuracy</span>
+                </div>
+                <span className="text-[13px] text-text-tertiary max-w-[36ch]">
+                  Measured against PaySim ground-truth labels, over every case the agent
+                  auto-decided (fraud or cleared).
+                </span>
+              </div>
+              <div className="flex flex-col gap-3 min-w-0">
+                <Meter
+                  label="Agent auto-resolved"
+                  value={autoResolved}
+                  max={handled}
+                  tone="blue"
+                  display={handled ? `${autoResolved}/${handled}` : "-"}
+                />
+                <Meter
+                  label="Escalated to human review"
+                  value={escalate}
+                  max={handled}
+                  tone="yellow"
+                  display={handled ? `${escalate}/${handled}` : "-"}
+                />
+                <Meter
+                  label="Fraud auto-blocked"
+                  value={fraud}
+                  max={handled}
+                  tone="red"
+                  display={`${fraud}`}
+                />
+              </div>
             </div>
           </Panel>
-        )}
 
-        <Panel title="Memory recall hits">
-          <div className="h-36">
-            {data?.memory_hits_trend && data.memory_hits_trend.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={data.memory_hits_trend}>
-                  <CartesianGrid stroke="#2e2e2e" strokeDasharray="3 3" vertical={false} />
-                  <XAxis
-                    dataKey="hour_bucket"
-                    stroke="#6C6C6C"
-                    fontSize={10}
-                    tickLine={false}
-                    axisLine={{ stroke: "#2e2e2e" }}
-                  />
-                  <YAxis
-                    stroke="#6C6C6C"
-                    fontSize={10}
-                    tickLine={false}
-                    axisLine={{ stroke: "#2e2e2e" }}
-                    width={24}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      background: "#1e1e1e",
-                      border: "1px solid #2e2e2e",
-                      fontSize: 11,
-                      borderRadius: 4,
-                    }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="avg_memory_hits"
-                    stroke="#5794F2"
-                    strokeWidth={1.5}
-                    dot={{ r: 2, fill: "#5794F2" }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+          <Panel title="Verdict split">
+            {handled > 0 ? (
+              <VerdictDonut
+                data={[
+                  { name: "cleared", value: legit, color: C.green },
+                  { name: "escalate", value: escalate, color: C.yellow },
+                  { name: "fraud", value: fraud, color: C.red },
+                ]}
+              />
             ) : (
-              <EmptyState message="No memory recall data yet" />
+              <EmptyState message="No verdicts yet" hint="Start the fleet to populate this." />
             )}
-          </div>
+          </Panel>
+        </div>
+
+        {/* Memory recall trend */}
+        <Panel
+          title="Memory recall"
+          subtitle="avg similar cases retrieved per investigation, last 24h"
+        >
+          {trend.length > 0 ? (
+            <AreaTrend data={trend} xKey="hour" yKey="hits" color={C.blue} unit=" hits" />
+          ) : (
+            <div className="h-[150px]">
+              <EmptyState
+                message="No recall data in the last 24h"
+                hint="Each investigation records how many past cases the vector index returned."
+              />
+            </div>
+          )}
         </Panel>
 
-        <Panel title="Live fleet">
+        {/* Live fleet */}
+        <Panel
+          title="Live fleet"
+          subtitle="agents currently investigating"
+          actions={
+            data?.live_tasks?.length ? (
+              <span className="tnum text-[13px] text-text-tertiary">
+                {data.live_tasks.length} active
+              </span>
+            ) : null
+          }
+        >
           {data?.live_tasks && data.live_tasks.length > 0 ? (
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-left text-text-tertiary border-b border-border">
-                  <th className="pb-1.5 font-normal">Task</th>
-                  <th className="pb-1.5 font-normal">Agent</th>
-                  <th className="pb-1.5 font-normal">Claimed</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.live_tasks.slice(0, 10).map((task) => (
-                  <tr key={task.task_id} className="border-b border-border/50 text-text-secondary">
-                    <td className="py-1.5">{task.task_id.slice(0, 8)}</td>
-                    <td className="py-1.5">{task.claimed_by.slice(0, 12)}</td>
-                    <td className="py-1.5">
-                      {new Date(task.claimed_at).toLocaleTimeString()}
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[14px]">
+                <thead>
+                  <tr className="text-left text-text-tertiary border-b border-border">
+                    <th className="pb-2 font-normal">Task</th>
+                    <th className="pb-2 font-normal">Agent</th>
+                    <th className="pb-2 font-normal text-right">Claimed</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {data.live_tasks.slice(0, 12).map((t) => (
+                    <tr key={t.task_id} className="border-b border-border/40">
+                      <td className="py-2 tnum text-text-secondary">{t.task_id.slice(0, 8)}</td>
+                      <td className="py-2 tnum text-text-secondary">{t.claimed_by.slice(0, 16)}</td>
+                      <td className="py-2 tnum text-right text-text-tertiary">
+                        {new Date(t.claimed_at).toLocaleTimeString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           ) : (
-            <EmptyState message="No agents currently investigating" />
+            <EmptyState message="No agents currently investigating" hint="The queue is drained - start a stream to see the fleet claim tasks concurrently." />
           )}
         </Panel>
       </div>

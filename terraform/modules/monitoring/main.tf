@@ -94,7 +94,7 @@ resource "aws_cloudwatch_dashboard" "hivemind" {
         properties = {
           title  = "Fleet Invocations"
           view   = "timeSeries"
-          region = data.aws_region.current.name
+          region = data.aws_region.current.region
           period = 60
           metrics = [
             for k, name in var.function_names :
@@ -111,7 +111,7 @@ resource "aws_cloudwatch_dashboard" "hivemind" {
         properties = {
           title  = "Fleet Errors"
           view   = "timeSeries"
-          region = data.aws_region.current.name
+          region = data.aws_region.current.region
           period = 60
           metrics = [
             for k, name in var.function_names :
@@ -128,7 +128,7 @@ resource "aws_cloudwatch_dashboard" "hivemind" {
         properties = {
           title  = "Agent Worker Duration"
           view   = "timeSeries"
-          region = data.aws_region.current.name
+          region = data.aws_region.current.region
           period = 60
           metrics = [
             ["AWS/Lambda", "Duration", "FunctionName", var.function_names["agent-worker"], { stat = "p50", label = "p50" }],
@@ -145,7 +145,7 @@ resource "aws_cloudwatch_dashboard" "hivemind" {
         properties = {
           title  = "Agent Worker Concurrency"
           view   = "timeSeries"
-          region = data.aws_region.current.name
+          region = data.aws_region.current.region
           period = 60
           metrics = [
             ["AWS/Lambda", "ConcurrentExecutions", "FunctionName", var.function_names["agent-worker"], { stat = "Maximum" }],
@@ -162,7 +162,7 @@ resource "aws_cloudwatch_dashboard" "hivemind" {
         properties = {
           title  = "HiveMind - Agent Verdicts"
           view   = "timeSeries"
-          region = data.aws_region.current.name
+          region = data.aws_region.current.region
           period = 60
           metrics = [
             [var.metrics_namespace, "AgentVerdicts", "Environment", var.environment, { stat = "Sum", label = "Verdicts" }],
@@ -180,7 +180,7 @@ resource "aws_cloudwatch_dashboard" "hivemind" {
         properties = {
           title  = "HiveMind - Investigation Latency"
           view   = "timeSeries"
-          region = data.aws_region.current.name
+          region = data.aws_region.current.region
           period = 60
           metrics = [
             [var.metrics_namespace, "InvestigationDuration", "Environment", var.environment, { stat = "p50", label = "p50" }],

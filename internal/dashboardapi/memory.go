@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"time"
 )
 
 type PatternStat struct {
@@ -140,9 +141,11 @@ func (s *Server) queryActiveAgents(ctx context.Context) ([]ActiveAgent, error) {
 	for rows.Next() {
 		var a ActiveAgent
 		var status, taskID string
-		if err := rows.Scan(&a.AgentID, &status, &taskID, &a.LastActivity); err != nil {
+		var lastActivity time.Time
+		if err := rows.Scan(&a.AgentID, &status, &taskID, &lastActivity); err != nil {
 			return nil, err
 		}
+		a.LastActivity = lastActivity.Format(time.RFC3339)
 		if status == "investigating" {
 			a.Status = "active"
 			a.CurrentTask = taskID

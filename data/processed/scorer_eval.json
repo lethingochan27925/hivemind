@@ -1,0 +1,29 @@
+{
+  "auprc": 0.9973,
+  "auroc": 0.9995,
+  "precision": 0.9531,
+  "recall": 0.9976,
+  "f1": 0.9748,
+  "confusion_matrix": [
+    [
+      552330,
+      82
+    ],
+    [
+      4,
+      1666
+    ]
+  ],
+  "routing": {
+    "low": 0.9778,
+    "medium": 0.0192,
+    "high": 0.003
+  },
+  "thresholds": {
+    "low": 0.001,
+    "high": 0.999
+  },
+  "note": "PaySim bimodal distribution \u2014 demo stream injects medium cases manually",
+  "dataset": "PaySim (CC BY 4.0)",
+  "model": "XGBClassifier(max_depth=3, scale_pos_weight=auto)"
+}

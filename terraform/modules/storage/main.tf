@@ -118,6 +118,28 @@ resource "aws_cloudfront_origin_access_control" "dashboard" {
   signing_protocol                  = "sigv4"
 }
 
+# Static export sinh ra reviews.html, memory.html... (khong phai reviews/index.html).
+# S3 voi OAC tra 403 (khong phai 404) cho key thieu, nen sub-route reload bi
+# AccessDenied. Function nay map URL khong-duoi-file -> file .html tuong ung.
+resource "aws_cloudfront_function" "rewrite_uri" {
+  name    = "${var.project}-${var.environment}-rewrite-uri"
+  runtime = "cloudfront-js-2.0"
+  comment = "Map extensionless routes to their static .html file"
+  publish = true
+  code    = <<-EOT
+    function handler(event) {
+      var request = event.request;
+      var uri = request.uri;
+      if (uri === "/" || uri.endsWith("/")) {
+        request.uri = uri + "index.html";
+      } else if (!uri.includes(".")) {
+        request.uri = uri + ".html";
+      }
+      return request;
+    }
+  EOT
+}
+
 resource "aws_cloudfront_distribution" "dashboard" {
   enabled             = true
   default_root_object = "index.html"
@@ -135,6 +157,11 @@ resource "aws_cloudfront_distribution" "dashboard" {
     cached_methods         = ["GET", "HEAD"]
     target_origin_id       = "s3-dashboard"
     viewer_protocol_policy = "redirect-to-https"
+
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.rewrite_uri.arn
+    }
 
     forwarded_values {
       query_string = false

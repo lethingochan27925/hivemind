@@ -1,6 +1,5 @@
-// main.go: dashboard-api entrypoint - khoi tao client, dang ky routes cho 5 trang dashboard.
-// Local dev: chay HTTP server thuong. Tren Lambda that: chay qua Lambda Runtime API
-// thong qua httpadapter, giu nguyen toan bo http.Handler da viet.
+// main.go: dashboard-api entrypoint - khoi tao client, dang ky routes cho dashboard
+// va control plane. Local dev: HTTP server thuong. Tren Lambda: qua httpadapter.
 package main
 
 import (
@@ -17,17 +16,32 @@ import (
 	"github.com/lethingochan27925/hivemind/pkg/cockroach"
 )
 
+const defaultPort = "8090"
+
+// buildMux chi lo routing. CORS duoc boc o ngoai nen khong lap lai o day.
 func buildMux(s *dashboardapi.Server) *http.ServeMux {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/overview", dashboardapi.CORSMiddleware(s.GetOverview))
-	mux.HandleFunc("/reviews", dashboardapi.CORSMiddleware(s.ListReviews))
-	mux.HandleFunc("/reviews/decide", dashboardapi.CORSMiddleware(s.DecideReview))
-	mux.HandleFunc("/memory", dashboardapi.CORSMiddleware(s.GetMemory))
-	mux.HandleFunc("/transactions", dashboardapi.CORSMiddleware(s.ListTransactions))
-	mux.HandleFunc("/transactions/", dashboardapi.CORSMiddleware(s.GetTransactionAudit))
-	mux.HandleFunc("/infrastructure", dashboardapi.CORSMiddleware(s.GetInfrastructure))
-	mux.HandleFunc("/infrastructure/simulate-crash", dashboardapi.CORSMiddleware(s.SimulateCrash))
-	mux.HandleFunc("/cost", dashboardapi.CORSMiddleware(s.GetCost))
+
+	// Read-only pages
+	mux.HandleFunc("/overview", s.GetOverview)
+	mux.HandleFunc("/reviews", s.ListReviews)
+	mux.HandleFunc("/reviews/decide", s.DecideReview)
+	mux.HandleFunc("/memory", s.GetMemory)
+	mux.HandleFunc("/transactions", s.ListTransactions)
+	mux.HandleFunc("/transactions/", s.GetTransactionAudit)
+	mux.HandleFunc("/infrastructure", s.GetInfrastructure)
+	mux.HandleFunc("/infrastructure/simulate-crash", s.SimulateCrash)
+	mux.HandleFunc("/cost", s.GetCost)
+
+	// Control plane — mutates the live system
+	mux.HandleFunc("/control/fleet", s.FleetHandler)
+	mux.HandleFunc("/control/dispatch", s.RunDispatch)
+	mux.HandleFunc("/control/feed", s.FeedStream)
+	mux.HandleFunc("/control/lambdas", s.ListLambdas)
+	mux.HandleFunc("/control/resources", s.ListResources)
+	mux.HandleFunc("/control/db", s.GetDbStats)
+	mux.HandleFunc("/control/query", s.RunQuery)
+
 	return mux
 }
 
@@ -44,11 +58,10 @@ func main() {
 	}
 	defer db.Close()
 
-	s := dashboardapi.NewServer(db)
-	mux := buildMux(s)
+	handler := dashboardapi.WithCORS(buildMux(dashboardapi.NewServer(db)))
 
 	if os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != "" {
-		adapter := httpadapter.NewV2(mux)
+		adapter := httpadapter.NewV2(handler)
 		lambda.Start(func(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 			return adapter.ProxyWithContext(ctx, req)
 		})
@@ -57,9 +70,9 @@ func main() {
 
 	port := os.Getenv("DASHBOARD_API_PORT")
 	if port == "" {
-		port = "8090"
+		port = defaultPort
 	}
 
 	log.Printf("Dashboard API listening on :%s", port)
-	log.Fatal(http.ListenAndServe(":"+port, mux))
+	log.Fatal(http.ListenAndServe(":"+port, handler))
 }

@@ -202,11 +202,44 @@ cd "$TERRAFORM_DIR"
 terraform apply -auto-approve
 ROLE_ARN=$(terraform output -raw github_actions_role_arn)
 DASHBOARD_API_URL=$(terraform output -raw dashboard_api_url)
+# Function URL cua Lambda luon ket thuc bang "/". Chuan hoa ngay tai bien he
+# thong de frontend khong bao gio ghep ra path "//".
+DASHBOARD_API_URL="${DASHBOARD_API_URL%/}"
+SCORING_PYTHON_URL=$(terraform output -raw scoring_python_url)
 DASHBOARD_BUCKET=$(terraform output -raw dashboard_bucket_name)
 CLOUDFRONT_ID=$(aws cloudfront list-distributions \
   --query "DistributionList.Items[?Comment=='${PROJECT}-${ENVIRONMENT}-dashboard'].Id" \
   --output text)
 cd - >/dev/null
+
+# SSM param nay duoc Terraform tao voi gia tri "placeholder" va
+# ignore_changes=[value] - dung y la de buoc apply ghi gia tri that vao,
+# vi Function URL chi biet duoc SAU khi Lambda scoring-python ton tai.
+log "Wiring scoring-python endpoint into SSM"
+aws ssm put-parameter \
+  --name "/${PROJECT}/${ENVIRONMENT}/scoring/python_endpoint" \
+  --value "${SCORING_PYTHON_URL%/}/score" \
+  --type String --overwrite --region "$REGION" >/dev/null
+ok "Scoring endpoint: ${SCORING_PYTHON_URL%/}/score"
+
+# Terraform khong phat hien thay doi khi tag anh van la ":latest", nen Lambda
+# tiep tuc chay digest cu. Phai ep Lambda doc lai tag, roi tro alias "live" sang
+# version moi - alias co ignore_changes=[function_version] nen Terraform khong
+# tu lam viec nay. Thieu buoc nay, bootstrap chi deploy duoc code o lan dau tien.
+log "Deploying pushed images to Lambda"
+for repo_name in "${SERVICE_MAP[@]}" scoring-python; do
+  fn="${PROJECT}-${ENVIRONMENT}-${repo_name}"
+  image="${ECR_REGISTRY}/${PROJECT}/${ENVIRONMENT}/${repo_name}:latest"
+  version=$(aws lambda update-function-code \
+    --function-name "$fn" --image-uri "$image" --publish \
+    --query Version --output text --region "$REGION") \
+    || err "update-function-code failed for ${fn}"
+  aws lambda wait function-updated --function-name "$fn" --region "$REGION"
+  aws lambda update-alias --function-name "$fn" --name live \
+    --function-version "$version" --region "$REGION" >/dev/null
+  log "  ${fn} -> version ${version}"
+done
+ok "All Lambda functions running the newly pushed images"
 
 ok "Backend infrastructure ready"
 
@@ -231,6 +264,9 @@ else
 fi
 
 ok "Bootstrap complete"
+echo ""
+echo "  Dashboard : $(terraform -chdir=terraform output -raw dashboard_url)"
+echo "  API       : ${DASHBOARD_API_URL}"
 
 echo ""
 

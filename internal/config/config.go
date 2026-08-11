@@ -42,6 +42,8 @@ type Config struct {
 var ssmParamMap = map[string]string{
 	"DATABASE_URL":             "/cockroachdb/connection_string",
 	"COCKROACHDB_MCP_ENDPOINT": "/cockroachdb/mcp_endpoint",
+	"COCKROACHDB_MCP_API_KEY":  "/cockroachdb/mcp_api_key",
+	"COCKROACHDB_CLUSTER_ID":   "/cockroachdb/cluster_id",
 	"TITAN_MODEL_ID":           "/bedrock/embedding_model_id",
 	"CLAUDE_MODEL_ID":          "/bedrock/model_id",
 }

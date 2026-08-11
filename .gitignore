@@ -1,53 +1,58 @@
-# Environment & Secrets
+# ===== Secrets & environment (NEVER commit — repo is public) =====
 .env
-.venv
-venv/
+.env.*
+!.env.example
+!**/.env.example
 
-# Data
-data/raw/
-data/processed/
-*.pkl
-*.joblib
-*.csv
-backups/
+# ===== Terraform (state & tfvars hold DB creds / API keys in plaintext) =====
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+crash.*.log
 
-# Python
+# ===== Node / Next.js =====
+node_modules/
+.next/
+out/
+.vercel/
+*-debug.log*
+
+# ===== Go / Lambda build output (scripts/bootstrap.sh is NOT affected) =====
+*.exe
+*.exe~
+*.test
+*.out
+bootstrap
+
+# ===== Python =====
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
+.venv/
+venv/
 *.egg-info/
 
-# Go
-*.exe
-bin/
-/worker
-/dispatcher
-/heartbeat-reaper
-/scoring-api
-*/bootstrap
+# ===== Build / deploy artifacts =====
+*.zip
+dist/
+build/
 
-# Terraform
-**/.terraform/
-**/.terraform.lock.hcl
-*.tfstate
-*.tfstate.backup
-.terraform.tfstate.lock.info
-*.tfplan
-*.tfvars
+# ===== HiveMind: scratchpad-generated delivery scripts & backups =====
+install-*.sh
+patch-*.py
+**/.redesign-backup/
+.gitignore.bak
 
-# Docker
-*.tar
-
-# Logs & debug files
-*.log
-all-workflows.txt
-terraform-full-review.txt
-
-# IDE
-.vscode/
-.idea/
-
-# OS
+# ===== OS / editor =====
 .DS_Store
 Thumbs.db
-terraform/modules/bootstrap/.terraform
+.idea/
+.vscode/
+*.swp
+
+# ===== Large data & artifacts (tai/regenerate qua scripts/init.sh) =====
+data/raw/*
+!data/raw/.gitkeep
+*.log

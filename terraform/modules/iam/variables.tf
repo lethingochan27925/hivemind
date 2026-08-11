@@ -40,6 +40,17 @@ variable "cockroachdb_mcp_endpoint" {
   sensitive   = true
 }
 
+variable "cockroachdb_mcp_api_key" {
+  description = "API key cua MCP Server - agent gui trong header Authorization: Bearer"
+  type        = string
+  sensitive   = true
+}
+
+variable "cockroachdb_cluster_id" {
+  description = "Cluster ID cua CockroachDB Cloud - tham so bat buoc cua tool select_query"
+  type        = string
+}
+
 variable "bedrock_model_id" {
   description = "Bedrock LLM model ID"
   type        = string

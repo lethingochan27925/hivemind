@@ -90,7 +90,7 @@ func (s *Server) queryVerdictsToday(ctx context.Context) ([]VerdictCount, error)
 		SELECT verdict, COUNT(*) AS count
 		FROM tasks
 		WHERE verdict IS NOT NULL
-		  AND completed_at >= current_date()
+		  AND completed_at >= now() - INTERVAL '24 hours'
 		GROUP BY verdict
 	`)
 	if err != nil {
@@ -121,9 +121,10 @@ func (s *Server) queryMemoryHitsTrend(ctx context.Context) ([]MemoryHitPoint, er
 	rows, err := s.DB.Pool.Query(ctx, `
 		SELECT
 			to_char(created_at, 'HH24:00') AS hour_bucket,
-			AVG(memory_hits) AS avg_hits
+			COALESCE(AVG(memory_hits), 0) AS avg_hits
 		FROM audit_log
 		WHERE action = 'memory_recall'
+		  AND memory_hits IS NOT NULL
 		  AND created_at >= now() - INTERVAL '24 hours'
 		GROUP BY hour_bucket
 		ORDER BY hour_bucket

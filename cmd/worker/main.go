@@ -30,7 +30,6 @@ func initWorker(ctx context.Context) (*agent.Worker, error) {
 	}
 
 	bedrockClient, err := bedrock.NewClient(ctx,
-		cfg.AWSAccessKeyID, cfg.AWSSecretAccessKey,
 		cfg.AWSRegionBedrock, cfg.AWSRegionEmbed,
 		cfg.ClaudeModelID, cfg.TitanModelID, cfg.EmbedDim,
 	)

@@ -79,14 +79,24 @@ func CompleteTask(ctx context.Context, db *cockroach.Client, taskID, status, ver
 	return nil
 }
 
-func FailTask(ctx context.Context, db *cockroach.Client, taskID string) error {
+// FailTask danh dau task that bai VA ghi ly do vao audit_log.
+// Ly do la tham so bat buoc: mot task chet khong de lai dau vet pha vo dung
+// cam ket "moi quyet dinh cua agent truy vet duoc" cua he thong.
+func FailTask(ctx context.Context, db *cockroach.Client, task *Task, agentID, reason string) error {
 	_, err := db.Pool.Exec(ctx, `
 		UPDATE tasks SET status = 'failed', completed_at = NOW() WHERE id = $1
-	`, taskID)
+	`, task.ID)
 	if err != nil {
 		return fmt.Errorf("failing task: %w", err)
 	}
-	return nil
+
+	return WriteAuditLog(ctx, db, AuditEntry{
+		TaskID:        task.ID,
+		TransactionID: task.TransactionID,
+		AgentID:       agentID,
+		Action:        "task_failed",
+		Reasoning:     &reason,
+	})
 }
 
 // SaveScratchpad ghi checkpoint (step + scratchpad) de agent khac co the

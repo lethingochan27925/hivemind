@@ -1,21 +1,10 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@/components/layout/sidebar";
 
-const geist = Geist({
-  variable: "--font-geist",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
 export const metadata: Metadata = {
-  title: "HiveMind Dashboard",
-  description: "Fraud investigation agent fleet monitoring",
+  title: "HiveMind - Mission Control",
+  description: "Distributed memory & control plane for production agent fleets",
 };
 
 export default function RootLayout({
@@ -24,8 +13,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${geist.variable} ${geistMono.variable} h-full`}>
-      <body className="min-h-full flex bg-bg-primary">
+    <html lang="en" className="h-full">
+      <body className="min-h-full flex bg-bg-primary text-text-primary">
         <Sidebar />
         <main className="flex-1 overflow-y-auto">{children}</main>
       </body>

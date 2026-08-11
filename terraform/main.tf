@@ -52,6 +52,8 @@ module "iam" {
 
   cockroachdb_connection_string = var.cockroachdb_connection_string
   cockroachdb_mcp_endpoint      = var.cockroachdb_mcp_endpoint
+  cockroachdb_mcp_api_key       = var.cockroachdb_mcp_api_key
+  cockroachdb_cluster_id        = var.cockroachdb_cluster_id
 
   bedrock_model_id           = var.bedrock_model_id
   bedrock_embedding_model_id = var.bedrock_embedding_model_id
@@ -98,8 +100,8 @@ module "lambda" {
       memory_mb            = var.scoring_api_memory_mb
       reserved_concurrency = -1
       environment = {
-        RISK_LOW_THRESHOLD    = tostring(var.risk_low_threshold)
-        RISK_HIGH_THRESHOLD   = tostring(var.risk_high_threshold)
+        RISK_LOW_THRESHOLD  = tostring(var.risk_low_threshold)
+        RISK_HIGH_THRESHOLD = tostring(var.risk_high_threshold)
       }
     }
 

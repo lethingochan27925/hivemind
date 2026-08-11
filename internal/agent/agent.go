@@ -81,6 +81,24 @@ func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
+// writeAudit ghi audit va bao ro khi that bai. Truoc day gia tri tra ve cua
+// WriteAuditLog bi bo qua o ca 5 cho goi, nen audit co the mat ban ghi ma
+// khong ai biet - go vet khong bat duoc loai loi nay.
+func (w *Worker) writeAudit(ctx context.Context, entry memory.AuditEntry) {
+	if err := memory.WriteAuditLog(ctx, w.db, entry); err != nil {
+		fmt.Printf("  [error] audit write failed (action=%s task=%s): %v\n",
+			entry.Action, entry.TaskID, err)
+	}
+}
+
+// failTask danh dau task hong kem ly do, de con dieu tra duoc vi sao.
+func (w *Worker) failTask(ctx context.Context, task *memory.Task, reason string) {
+	fmt.Printf("  [error] %s\n", reason)
+	if err := memory.FailTask(ctx, w.db, task, w.ID, reason); err != nil {
+		fmt.Printf("  [error] recording task failure: %v\n", err)
+	}
+}
+
 func (w *Worker) processTask(ctx context.Context, task *memory.Task) {
 	sp, err := ParseScratchpad(task.Scratchpad)
 	if err != nil {
@@ -95,13 +113,11 @@ func (w *Worker) processTask(ctx context.Context, task *memory.Task) {
 
 	txn, err := w.mcp.GetTransaction(task.TransactionID)
 	if err != nil {
-		fmt.Printf("  [error] GetTransaction failed: %v\n", err)
-		memory.FailTask(ctx, w.db, task.ID)
+		w.failTask(ctx, task, fmt.Sprintf("MCP GetTransaction failed: %v", err))
 		return
 	}
 	if txn == nil {
-		fmt.Printf("  [error] Transaction %s not found\n", task.TransactionID)
-		memory.FailTask(ctx, w.db, task.ID)
+		w.failTask(ctx, task, fmt.Sprintf("MCP returned no transaction %s", task.TransactionID))
 		return
 	}
 
@@ -124,7 +140,17 @@ func (w *Worker) processTask(ctx context.Context, task *memory.Task) {
 	sp.PartialReasoning = result.Rationale
 	w.saveCheckpoint(ctx, task.ID, "reasoned", sp)
 
-	memory.WriteAuditLog(ctx, w.db, memory.AuditEntry{
+	// Chi ghi bedrock_model khi Claude that su tra loi. Neu roi vao
+	// ruleBasedFallback thi de NULL, de mot cau SQL phan biet duoc verdict do
+	// LLM suy luan voi verdict do quy tac nguong risk_score sinh ra. Truoc day
+	// ca hai deu duoc ghi la "bedrock_reasoning" kem ten model Claude, khien
+	// audit trail khang dinh sai ve nguon goc quyet dinh.
+	var bedrockModel *string
+	if result.Step == "bedrock_reasoning" {
+		bedrockModel = &w.bedrock.ClaudeModelID
+	}
+
+	w.writeAudit(ctx, memory.AuditEntry{
 		TaskID:        task.ID,
 		TransactionID: task.TransactionID,
 		AgentID:       w.ID,
@@ -132,7 +158,7 @@ func (w *Worker) processTask(ctx context.Context, task *memory.Task) {
 		Reasoning:     &result.Rationale,
 		TokensIn:      result.TokensIn,
 		TokensOut:     result.TokensOut,
-		BedrockModel:  &w.bedrock.ClaudeModelID,
+		BedrockModel:  bedrockModel,
 		LatencyMs:     &result.LatencyMs,
 	})
 
@@ -149,7 +175,7 @@ func (w *Worker) processTask(ctx context.Context, task *memory.Task) {
 	w.writeCaseMemoryAndAudit(ctx, txn, task.ID, task.TransactionID, result)
 
 	verdictAction := fmt.Sprintf("verdict_%s", result.Verdict)
-	memory.WriteAuditLog(ctx, w.db, memory.AuditEntry{
+	w.writeAudit(ctx, memory.AuditEntry{
 		TaskID:        task.ID,
 		TransactionID: task.TransactionID,
 		AgentID:       w.ID,
@@ -188,11 +214,16 @@ func (w *Worker) stepMemoryRecall(ctx context.Context, taskID string, txn *mcp.T
 	sp.TopKCases = hitsJSON
 	w.saveCheckpoint(ctx, taskID, "memory_recalled", sp)
 
-	memory.WriteAuditLog(ctx, w.db, memory.AuditEntry{
+	// So luong hit PHAI duoc ghi vao audit: day la du lieu goc de chung minh
+	// memory co lam agent tot hon hay khong, va la nguon cua bieu do
+	// "Memory recall hits" tren dashboard. Thieu no thi ca hai deu rong.
+	hitCount := len(memoryHits)
+	w.writeAudit(ctx, memory.AuditEntry{
 		TaskID:        taskID,
 		TransactionID: txn.ID,
 		AgentID:       w.ID,
 		Action:        "memory_recall",
+		MemoryHits:    &hitCount,
 	})
 
 	return memoryHits
@@ -220,7 +251,7 @@ func (w *Worker) stepCustomerContext(ctx context.Context, taskID, transactionID 
 	sp.MCPResult = mcpJSON
 	w.saveCheckpoint(ctx, taskID, "mcp_queried", sp)
 
-	memory.WriteAuditLog(ctx, w.db, memory.AuditEntry{
+	w.writeAudit(ctx, memory.AuditEntry{
 		TaskID:        taskID,
 		TransactionID: transactionID,
 		AgentID:       w.ID,
@@ -300,7 +331,7 @@ func (w *Worker) autoDecide(ctx context.Context, taskID, transactionID string, t
 		fmt.Printf("  [error] CompleteTask (auto) failed: %v\n", err)
 		return
 	}
-	memory.WriteAuditLog(ctx, w.db, memory.AuditEntry{
+	w.writeAudit(ctx, memory.AuditEntry{
 		TaskID:        taskID,
 		TransactionID: transactionID,
 		AgentID:       w.ID,

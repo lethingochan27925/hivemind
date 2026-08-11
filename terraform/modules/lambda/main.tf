@@ -104,4 +104,45 @@ resource "aws_lambda_function_url" "endpoints" {
   function_name      = aws_lambda_function.functions[each.key].function_name
   qualifier          = aws_lambda_alias.live[each.key].name
   authorization_type = each.value
+
+  # Provider tu goi AddPermission("FunctionURLAllowPublicAccess") khi tao
+  # Function URL voi auth NONE, va bo qua xung dot neu statement da ton tai.
+  # Ep quyen khai bao tuong minh tao TRUOC de tan dung co che bo qua do:
+  # neu nguoc thu tu, resource cua ta dinh 409 ResourceConflictException.
+  depends_on = [
+    aws_lambda_permission.function_url_public,
+    aws_lambda_permission.function_url_invoke,
+  ]
+}
+
+# Function URL voi authorization_type = "NONE" van can resource-based policy
+# cho phep invoke public -- khong co thi AWS tra 403 truoc khi ham chay.
+# Khai bao tuong minh thay vi dua vao hanh vi ngam cua provider, va phai gan
+# dung qualifier cua alias ma URL tro toi (URL nam tren alias, khong phai $LATEST).
+# Chi tao cho service that su de NONE -> derive tu cung mot source of truth.
+resource "aws_lambda_permission" "function_url_public" {
+  for_each = { for svc, auth in var.function_url_services : svc => auth if auth == "NONE" }
+
+  statement_id           = "FunctionURLAllowPublicAccess"
+  action                 = "lambda:InvokeFunctionUrl"
+  function_name          = aws_lambda_function.functions[each.key].function_name
+  qualifier              = aws_lambda_alias.live[each.key].name
+  principal              = "*"
+  function_url_auth_type = "NONE"
+}
+
+# Tu 10/2025 AWS yeu cau Function URL public phai co CA HAI quyen:
+# lambda:InvokeFunctionUrl (resource tren) va lambda:InvokeFunction (resource nay).
+# Thieu mot trong hai -> 403 AccessDeniedException truoc khi ham kip chay.
+# invoked_via_function_url la bat buoc ve bao mat: khong co no, Principal "*"
+# cho phep goi thang ham qua Lambda API chu khong chi qua URL.
+resource "aws_lambda_permission" "function_url_invoke" {
+  for_each = { for svc, auth in var.function_url_services : svc => auth if auth == "NONE" }
+
+  statement_id             = "FunctionURLInvokeAllowPublicAccess"
+  action                   = "lambda:InvokeFunction"
+  function_name            = aws_lambda_function.functions[each.key].function_name
+  qualifier                = aws_lambda_alias.live[each.key].name
+  principal                = "*"
+  invoked_via_function_url = true
 }

@@ -50,3 +50,8 @@ output "dashboard_api_url" {
 output "dashboard_bucket_name" {
   value = module.storage.dashboard_bucket_name
 }
+
+output "scoring_python_url" {
+  description = "Function URL cua scoring-python - Go scoring-api forward request toi day"
+  value       = try(module.lambda.function_urls["scoring-python"], null)
+}

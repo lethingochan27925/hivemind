@@ -21,6 +21,8 @@ set +a
 
 [ -n "${DATABASE_URL:-}" ] || err "DATABASE_URL not set in .env"
 [ -n "${COCKROACHDB_MCP_ENDPOINT:-}" ] || err "COCKROACHDB_MCP_ENDPOINT not set in .env"
+[ -n "${COCKROACHDB_MCP_API_KEY:-}" ] || err "COCKROACHDB_MCP_API_KEY not set in .env"
+[ -n "${COCKROACHDB_CLUSTER_ID:-}" ] || err "COCKROACHDB_CLUSTER_ID not set in .env"
 
 if [ -z "${1:-}" ]; then
   err "usage: $0 <AWS_GITHUB_ACTIONS_ROLE_ARN>  (get it from: terraform output -raw github_actions_role_arn)"
@@ -42,6 +44,12 @@ ok "DATABASE_URL set"
 
 gh secret set COCKROACHDB_MCP_ENDPOINT --body "$COCKROACHDB_MCP_ENDPOINT" --repo "$GITHUB_REPO"
 ok "COCKROACHDB_MCP_ENDPOINT set"
+
+gh secret set COCKROACHDB_MCP_API_KEY --body "$COCKROACHDB_MCP_API_KEY" --repo "$GITHUB_REPO"
+ok "COCKROACHDB_MCP_API_KEY set"
+
+gh secret set COCKROACHDB_CLUSTER_ID --body "$COCKROACHDB_CLUSTER_ID" --repo "$GITHUB_REPO"
+ok "COCKROACHDB_CLUSTER_ID set"
 
 gh secret set ALERT_EMAIL --body "$ALERT_EMAIL_VALUE" --repo "$GITHUB_REPO"
 ok "ALERT_EMAIL set"

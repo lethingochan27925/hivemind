@@ -1,4 +1,16 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_DASHBOARD_API_URL || "http://localhost:8090";
+const DEFAULT_API_BASE_URL = "http://localhost:8090";
+
+/**
+ * Lambda Function URL luon co dau "/" o cuoi. Ghep thang voi path se ra
+ * "//overview": Go ServeMux tra 301 canonical-path, ma response 301 do khong
+ * di qua CORS middleware nen browser chan. Chuan hoa base URL tai dung mot cho.
+ */
+function normalizeBaseURL(raw: string | undefined): string {
+  const value = raw?.trim();
+  return (value || DEFAULT_API_BASE_URL).replace(/\/+$/, "");
+}
+
+const API_BASE_URL = normalizeBaseURL(process.env.NEXT_PUBLIC_DASHBOARD_API_URL);
 
 export interface VerdictCount {
   verdict: string;
@@ -113,13 +125,66 @@ export interface CostData {
   by_agent: AgentCost[] | null;
 }
 
+// --- Control plane types -----------------------------------------------------
+export interface ScheduleState {
+  service: string;
+  state: string;
+}
+export interface FleetStatus {
+  running: boolean;
+  schedules: ScheduleState[];
+  tasks: Record<string, number>;
+}
+export interface DispatchResult {
+  tasks_created: number;
+  pending_tasks: number;
+  workers_invoked: number;
+}
+export interface LambdaInfo {
+  service: string;
+  state: string;
+  version: string;
+  memory_mb: number;
+  timeout_sec: number;
+  last_modified: string;
+  runtime: string;
+}
+export interface ResourceInfo {
+  service: string;
+  name: string;
+  arn: string;
+}
+export interface TableStat {
+  table: string;
+  rows: number;
+}
+export interface DbStats {
+  database: string;
+  tables: TableStat[];
+  total_rows: number;
+}
+export interface QueryResult {
+  columns: string[];
+  rows: unknown[][];
+  row_count: number;
+  truncated: boolean;
+}
+
+const CONTROL_TOKEN = process.env.NEXT_PUBLIC_CONTROL_TOKEN;
+function controlHeaders(): Record<string, string> {
+  const h: Record<string, string> = { "Content-Type": "application/json" };
+  if (CONTROL_TOKEN) h["X-Control-Token"] = CONTROL_TOKEN;
+  return h;
+}
+
 async function fetchJSON<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     cache: "no-store",
   });
   if (!res.ok) {
-    throw new Error(`API error ${res.status}: ${path}`);
+    const detail = await res.text().catch(() => "");
+    throw new Error(`API ${res.status} ${path}${detail ? ` \u2014 ${detail.trim()}` : ""}`);
   }
   return res.json();
 }
@@ -152,4 +217,32 @@ export const api = {
       "/infrastructure/simulate-crash",
       { method: "POST" }
     ),
+  getLambdas: () => fetchJSON<LambdaInfo[]>("/control/lambdas"),
+  getResources: () => fetchJSON<ResourceInfo[]>("/control/resources"),
+  getDbStats: () => fetchJSON<DbStats>("/control/db"),
+  runQuery: (sql: string) =>
+    fetchJSON<QueryResult>("/control/query", {
+      method: "POST",
+      headers: controlHeaders(),
+      body: JSON.stringify({ sql }),
+    }),
+
+  getFleetStatus: () => fetchJSON<FleetStatus>("/control/fleet"),
+  setFleetState: (action: "start" | "pause") =>
+    fetchJSON<{ status: string; running: boolean }>("/control/fleet", {
+      method: "POST",
+      headers: controlHeaders(),
+      body: JSON.stringify({ action }),
+    }),
+  runDispatch: () =>
+    fetchJSON<{ status: string; dispatcher_result: DispatchResult }>("/control/dispatch", {
+      method: "POST",
+      headers: controlHeaders(),
+    }),
+  feedStream: (count: number) =>
+    fetchJSON<{ status: string; requeued: number }>("/control/feed", {
+      method: "POST",
+      headers: controlHeaders(),
+      body: JSON.stringify({ count }),
+    }),
 };
