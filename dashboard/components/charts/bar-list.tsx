@@ -1,5 +1,7 @@
 "use client";
 
+import { PASTEL } from "@/lib/palette";
+
 type Row = { label: string; value: number };
 
 /**
@@ -8,7 +10,7 @@ type Row = { label: string; value: number };
  */
 export function BarList({
   rows,
-  color = "#bd82e6",
+  color = PASTEL.purple,
   formatLabel,
 }: {
   rows: Row[];

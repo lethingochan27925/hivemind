@@ -7,6 +7,8 @@ import { Stat } from "@/components/ui/stat";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
+import { PASTEL } from "@/lib/palette";
+import { MemoryAdmin } from "@/components/control/memory-admin";
 import { BarList } from "@/components/charts/bar-list";
 import { Database, Archive, Gauge, Target } from "lucide-react";
 
@@ -35,6 +37,8 @@ export default function MemoryPage() {
       />
 
       <div className="p-6 space-y-5 hm-enter">
+        <MemoryAdmin />
+
         <div className="grid grid-cols-2 md:grid-cols-4 border border-border rounded-md divide-y md:divide-y-0 md:divide-x divide-border bg-bg-panel/40">
           <Stat
             label="Active cases"
@@ -75,7 +79,7 @@ export default function MemoryPage() {
                   label: p.pattern_type,
                   value: p.count,
                 }))}
-                color="#b877d9"
+                color={PASTEL.purple}
                 formatLabel={prettyPattern}
               />
             ) : (

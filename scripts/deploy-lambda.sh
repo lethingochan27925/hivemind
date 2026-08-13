@@ -36,7 +36,10 @@ declare -A CMD_PATH=(
 )
 
 SERVICES=("$@")
-[ ${#SERVICES[@]} -eq 0 ] && SERVICES=(agent-worker dispatcher reaper salience-decay scoring-api dashboard-api scoring-python)
+# Mac dinh: 6 image Go (build ~10s/cai). scoring-python nang (pandas/sklearn)
+# va gan nhu khong doi -> chi build khi duoc goi ten ro rang:
+#   ./scripts/deploy-lambda.sh scoring-python
+[ ${#SERVICES[@]} -eq 0 ] && SERVICES=(agent-worker dispatcher reaper salience-decay scoring-api dashboard-api)
 
 aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "$REG" >/dev/null
 echo "[i] registry: $REG"

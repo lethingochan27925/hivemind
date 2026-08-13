@@ -233,13 +233,34 @@ resource "aws_iam_role_policy" "dashboard_api" {
         Resource = "arn:aws:events:${local.region}:${local.account_id}:rule/${var.project}-${var.environment}-*-schedule"
       },
       {
+        Sid    = "CostExplorerRead"
+        Effect = "Allow"
+        Action = [
+          "ce:GetCostAndUsage",
+          "ce:GetCostForecast",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "ManageAliases"
+        Effect = "Allow"
+        Action = [
+          "lambda:GetAlias",
+          "lambda:UpdateAlias",
+          "lambda:ListVersionsByFunction",
+        ]
+        Resource = "arn:aws:lambda:${local.region}:${local.account_id}:function:${var.project}-${var.environment}-*"
+      },
+      {
         Sid    = "InvokeFleet"
         Effect = "Allow"
         Action = ["lambda:InvokeFunction"]
-        Resource = [
-          "arn:aws:lambda:${local.region}:${local.account_id}:function:${var.function_names["dispatcher"]}",
-          "arn:aws:lambda:${local.region}:${local.account_id}:function:${var.function_names["dispatcher"]}:*",
-        ]
+        Resource = flatten([
+          for svc in ["dispatcher", "agent-worker", "reaper", "salience-decay"] : [
+            "arn:aws:lambda:${local.region}:${local.account_id}:function:${var.function_names[svc]}",
+            "arn:aws:lambda:${local.region}:${local.account_id}:function:${var.function_names[svc]}:*",
+          ]
+        ])
       },
       {
         Sid      = "ReadLambdaConfig"

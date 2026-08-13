@@ -11,9 +11,11 @@ import { VerdictDonut } from "@/components/charts/verdict-donut";
 import { AreaTrend } from "@/components/charts/area-trend";
 import { LearningCurve } from "@/components/charts/learning-curve";
 import { FleetControl } from "@/components/control/fleet-control";
+import { PolicyPanel } from "@/components/control/policy-panel";
 import { ShieldAlert, ShieldCheck, Flag, ClipboardList, Cpu } from "lucide-react";
+import { PASTEL } from "@/lib/palette";
 
-const C = { red: "#f2495c", green: "#6ccf8e", yellow: "#f2cc47", blue: "#5794f2" };
+const C = { red: PASTEL.red, green: PASTEL.green, yellow: PASTEL.yellow, blue: PASTEL.blue };
 
 export default function OverviewPage() {
   const { data, error, lastUpdated } = useLive(api.getOverview, 5000);
@@ -67,6 +69,9 @@ export default function OverviewPage() {
 
         {/* Fleet control - live operations */}
         <FleetControl />
+
+        {/* Agent policy - tune how the fleet decides, live */}
+        <PolicyPanel />
 
         {/* Impact + verdict split */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

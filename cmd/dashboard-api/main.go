@@ -32,6 +32,7 @@ func buildMux(s *dashboardapi.Server) *http.ServeMux {
 	mux.HandleFunc("/infrastructure", s.GetInfrastructure)
 	mux.HandleFunc("/infrastructure/simulate-crash", s.SimulateCrash)
 	mux.HandleFunc("/cost", s.GetCost)
+	mux.HandleFunc("/cost/infrastructure", s.GetCloudCost)
 
 	// Control plane — mutates the live system
 	mux.HandleFunc("/control/fleet", s.FleetHandler)
@@ -41,6 +42,17 @@ func buildMux(s *dashboardapi.Server) *http.ServeMux {
 	mux.HandleFunc("/control/resources", s.ListResources)
 	mux.HandleFunc("/control/db", s.GetDbStats)
 	mux.HandleFunc("/control/query", s.RunQuery)
+	mux.HandleFunc("/control/regions", s.RegionsHandler)
+	mux.HandleFunc("/control/search", s.Search)
+	mux.HandleFunc("/control/schedule", s.ScheduleOne)
+	mux.HandleFunc("/control/invoke", s.InvokeService)
+	mux.HandleFunc("/control/policy", s.PolicyHandler)
+	mux.HandleFunc("/control/budget", s.GetBudget)
+	mux.HandleFunc("/control/memory", s.MemoryAdmin)
+	mux.HandleFunc("/control/memory/job", s.MemoryJob)
+	mux.HandleFunc("/control/task", s.TaskControl)
+	mux.HandleFunc("/control/rollback", s.RollbackService)
+	mux.HandleFunc("/reviews/bulk", s.BulkReview)
 
 	return mux
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
+import { CHART_CHROME } from "@/lib/palette";
 
 type Slice = { name: string; value: number; color: string };
 
@@ -17,7 +18,7 @@ export function VerdictDonut({ data }: { data: Slice[] }) {
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
-              data={total > 0 ? data : [{ name: "none", value: 1, color: "#262b38" }]}
+              data={total > 0 ? data : [{ name: "none", value: 1, color: CHART_CHROME.empty }]}
               dataKey="value"
               innerRadius={52}
               outerRadius={72}
@@ -26,7 +27,7 @@ export function VerdictDonut({ data }: { data: Slice[] }) {
               paddingAngle={total > 0 ? 2 : 0}
               stroke="none"
             >
-              {(total > 0 ? data : [{ color: "#262b38" }]).map((d, i) => (
+              {(total > 0 ? data : [{ color: CHART_CHROME.empty }]).map((d, i) => (
                 <Cell key={i} fill={d.color} />
               ))}
             </Pie>

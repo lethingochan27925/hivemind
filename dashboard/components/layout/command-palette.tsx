@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api } from "@/lib/api";
+import { api, SearchResults } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import {
   LayoutGrid,
   ClipboardCheck,
@@ -20,6 +21,7 @@ import {
   Search,
   Loader2,
   CornerDownLeft,
+  Cpu,
 } from "lucide-react";
 import { ReactNode } from "react";
 
@@ -31,14 +33,16 @@ import { ReactNode } from "react";
 
 interface Item {
   id: string;
-  group: "Go to" | "Actions";
+  group: "Go to" | "Actions" | "Data";
   label: string;
+  sub?: string;
   keywords: string;
   icon: ReactNode;
   run: () => Promise<string | void> | string | void;
 }
 
 export function CommandPalette() {
+  const t = useT();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -127,13 +131,86 @@ export function CommandPalette() {
     ];
   }, [router, close]);
 
+  // Data search: debounce 250ms roi hoi /control/search - tim transaction,
+  // task, memory, agent theo id/ten/noi dung, khong chi ten trang.
+  const [results, setResults] = useState<SearchResults | null>(null);
+  useEffect(() => {
+    const q = query.trim();
+    if (!open || q.length < 2) {
+      setResults(null);
+      return;
+    }
+    const t = setTimeout(() => {
+      api
+        .search(q)
+        .then((r) => setResults(r))
+        .catch(() => setResults(null));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [query, open]);
+
+  const dataItems: Item[] = useMemo(() => {
+    if (!results) return [];
+    const go = (path: string) => {
+      router.push(path);
+      close();
+    };
+    const out: Item[] = [];
+    for (const t of results.transactions) {
+      out.push({
+        id: `txn:${t.id}`,
+        group: "Data",
+        label: `${t.type} · ${t.amount.toLocaleString(undefined, { maximumFractionDigits: 0 })} · ${t.verdict ?? t.risk_tier}`,
+        sub: `transaction ${t.id.slice(0, 8)}`,
+        keywords: "",
+        icon: <Activity size={15} />,
+        run: () => go(`/transactions?id=${t.id}`),
+      });
+    }
+    for (const t of results.tasks) {
+      out.push({
+        id: `task:${t.id}`,
+        group: "Data",
+        label: `task ${t.id.slice(0, 8)} · ${t.status}${t.verdict ? ` · ${t.verdict}` : ""}`,
+        sub: `investigation of ${t.transaction_id.slice(0, 8)}`,
+        keywords: "",
+        icon: <ClipboardCheck size={15} />,
+        run: () => go(`/transactions?id=${t.transaction_id}`),
+      });
+    }
+    for (const m of results.memories) {
+      out.push({
+        id: `mem:${m.id}`,
+        group: "Data",
+        label: m.summary.length > 64 ? m.summary.slice(0, 64) + "…" : m.summary,
+        sub: `memory · ${m.pattern_type ?? m.verdict} · recalled ${m.recall_count}x`,
+        keywords: "",
+        icon: <Brain size={15} />,
+        run: () =>
+          go(`/database?sql=${encodeURIComponent(`SELECT * FROM case_memory WHERE id = '${m.id}'`)}`),
+      });
+    }
+    for (const a of results.agents) {
+      out.push({
+        id: `agent:${a.agent_id}`,
+        group: "Data",
+        label: `agent ${a.agent_id}`,
+        sub: `${a.actions.toLocaleString()} audited actions`,
+        keywords: "",
+        icon: <Cpu size={15} />,
+        run: () => go("/memory"),
+      });
+    }
+    return out;
+  }, [results, router, close]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter(
-      (i) => i.label.toLowerCase().includes(q) || i.keywords.includes(q)
-    );
-  }, [items, query]);
+    const base = !q
+      ? items
+      : items.filter((i) => i.label.toLowerCase().includes(q) || i.keywords.includes(q));
+    return [...base, ...dataItems];
+  }, [items, query, dataItems]);
 
   // Global shortcuts
   useEffect(() => {
@@ -164,7 +241,7 @@ export function CommandPalette() {
 
   if (!open) return null;
 
-  const groups: ("Go to" | "Actions")[] = ["Go to", "Actions"];
+  const groups: ("Go to" | "Actions" | "Data")[] = ["Go to", "Actions", "Data"];
   const flat = filtered;
 
   return (
@@ -195,7 +272,7 @@ export function CommandPalette() {
                 flat[index].run();
               }
             }}
-            placeholder="Go to a page or run an action…"
+            placeholder={t("Go to a page or run an action…")}
             className="flex-1 bg-transparent outline-none text-[15px] text-text-primary placeholder:text-text-tertiary"
           />
           <kbd className="text-[11px] text-text-tertiary border border-border rounded px-1.5 py-0.5">esc</kbd>
@@ -203,7 +280,7 @@ export function CommandPalette() {
 
         <div className="max-h-[46vh] overflow-y-auto py-1.5">
           {flat.length === 0 && (
-            <div className="px-4 py-6 text-[13px] text-text-tertiary">No matches.</div>
+            <div className="px-4 py-6 text-[13px] text-text-tertiary">{t("No matches.")}</div>
           )}
           {groups.map((g) => {
             const group = flat.filter((i) => i.group === g);
@@ -211,7 +288,7 @@ export function CommandPalette() {
             return (
               <div key={g}>
                 <div className="px-4 pt-2 pb-1 text-[10px] uppercase tracking-[0.16em] text-text-tertiary font-bold">
-                  {g}
+                  {t(g)}
                 </div>
                 {group.map((item) => {
                   const i = flat.indexOf(item);
@@ -232,9 +309,16 @@ export function CommandPalette() {
                           item.icon
                         )}
                       </span>
-                      {item.label}
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate">{t(item.label)}</span>
+                        {item.sub && (
+                          <span className="block text-[11px] text-text-tertiary tnum truncate">
+                            {item.sub}
+                          </span>
+                        )}
+                      </span>
                       {active && (
-                        <CornerDownLeft size={13} className="ml-auto text-text-tertiary" />
+                        <CornerDownLeft size={13} className="ml-auto text-text-tertiary shrink-0" />
                       )}
                     </button>
                   );

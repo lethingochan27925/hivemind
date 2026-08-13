@@ -183,6 +183,89 @@ export interface QueryResult {
   row_count: number;
   truncated: boolean;
 }
+export interface ServiceCost {
+  service: string;
+  usd: number;
+}
+export interface CloudCost {
+  available: boolean;
+  note?: string;
+  period_start: string;
+  period_end: string;
+  total_usd: number;
+  by_service: ServiceCost[] | null;
+  refreshed_at?: string;
+  cache_minutes: number;
+}
+export interface Policy {
+  risk_low: number;
+  risk_high: number;
+  dispatch_batch: number;
+  fallback_action: "escalate" | "requeue";
+  daily_budget_usd: number;
+  auto_pause_on_budget: boolean;
+  updated_by?: string;
+  updated_at?: string;
+}
+export interface BudgetStatus {
+  spend_today: number;
+  daily_budget_usd: number;
+  used_pct: number;
+  exceeded: boolean;
+  auto_pause_on_budget: boolean;
+  paused_by_rule: boolean;
+}
+export interface MemoryRow {
+  id: string;
+  summary: string;
+  verdict: string;
+  pattern_type?: string;
+  salience: number;
+  recall_count: number;
+  merge_count: number;
+  archived: boolean;
+}
+export interface SearchTxn {
+  id: string;
+  type: string;
+  amount: number;
+  risk_tier: string;
+  verdict?: string;
+}
+export interface SearchTask {
+  id: string;
+  transaction_id: string;
+  status: string;
+  verdict?: string;
+}
+export interface SearchMemory {
+  id: string;
+  summary: string;
+  verdict: string;
+  pattern_type?: string;
+  recall_count: number;
+}
+export interface SearchAgent {
+  agent_id: string;
+  actions: number;
+}
+export interface SearchResults {
+  query: string;
+  transactions: SearchTxn[];
+  tasks: SearchTask[];
+  memories: SearchMemory[];
+  agents: SearchAgent[];
+}
+export interface RegionInfo {
+  region: string;
+  primary: boolean;
+}
+export interface RegionsStatus {
+  database: string;
+  multi_region: boolean;
+  survival_goal: string;
+  regions: RegionInfo[];
+}
 
 const CONTROL_TOKEN = process.env.NEXT_PUBLIC_CONTROL_TOKEN;
 function controlHeaders(): Record<string, string> {
@@ -232,6 +315,82 @@ export const api = {
       { method: "POST" }
     ),
   getLambdas: () => fetchJSON<LambdaInfo[]>("/control/lambdas"),
+  search: (q: string) => fetchJSON<SearchResults>(`/control/search?q=${encodeURIComponent(q)}`),
+  scheduleOne: (service: string, action: "enable" | "disable") =>
+    fetchJSON<{ status: string }>("/control/schedule", {
+      method: "POST",
+      headers: controlHeaders(),
+      body: JSON.stringify({ service, action }),
+    }),
+  invokeService: (service: string) =>
+    fetchJSON<{ status: string; service: string }>("/control/invoke", {
+      method: "POST",
+      headers: controlHeaders(),
+      body: JSON.stringify({ service }),
+    }),
+  // Policy & budget
+  getPolicy: () => fetchJSON<Policy>("/control/policy"),
+  setPolicy: (p: Policy) =>
+    fetchJSON<Policy>("/control/policy", {
+      method: "POST",
+      headers: controlHeaders(),
+      body: JSON.stringify(p),
+    }),
+  getBudget: () => fetchJSON<BudgetStatus>("/control/budget"),
+  getCloudCost: () => fetchJSON<CloudCost>("/cost/infrastructure"),
+
+  // Episodic memory administration
+  getMemories: (opts?: { limit?: number; archived?: boolean }) =>
+    fetchJSON<MemoryRow[]>(
+      `/control/memory?limit=${opts?.limit ?? 50}&archived=${opts?.archived ? "true" : "false"}`
+    ),
+  memoryAction: (action: "pin" | "unpin" | "archive" | "unarchive" | "delete", id: string) =>
+    fetchJSON<{ status: string }>("/control/memory", {
+      method: "POST",
+      headers: controlHeaders(),
+      body: JSON.stringify({ action, id }),
+    }),
+  memoryJob: (job: "decay" | "archive_below", threshold?: number) =>
+    fetchJSON<{ status: string; archived?: number }>("/control/memory/job", {
+      method: "POST",
+      headers: controlHeaders(),
+      body: JSON.stringify({ job, threshold: threshold ?? 0 }),
+    }),
+
+  // Task-level control
+  requeueTask: (task_id: string) =>
+    fetchJSON<{ status: string }>("/control/task", {
+      method: "POST",
+      headers: controlHeaders(),
+      body: JSON.stringify({ action: "requeue", task_id }),
+    }),
+  overrideVerdict: (task_id: string, verdict: string, reviewer_id: string, notes?: string) =>
+    fetchJSON<{ status: string }>("/control/task", {
+      method: "POST",
+      headers: controlHeaders(),
+      body: JSON.stringify({ action: "override", task_id, verdict, reviewer_id, notes: notes ?? "" }),
+    }),
+  bulkReview: (task_ids: string[], decision: "approved" | "rejected", reviewer_id: string, notes?: string) =>
+    fetchJSON<{ decided: number; failed: number }>("/reviews/bulk", {
+      method: "POST",
+      headers: controlHeaders(),
+      body: JSON.stringify({ task_ids, decision, reviewer_id, notes: notes ?? "" }),
+    }),
+
+  rollbackService: (service: string) =>
+    fetchJSON<{ status: string; from_version: number; to_version: number }>("/control/rollback", {
+      method: "POST",
+      headers: controlHeaders(),
+      body: JSON.stringify({ service }),
+    }),
+
+  getRegions: () => fetchJSON<RegionsStatus>("/control/regions"),
+  alterRegion: (action: "add" | "drop" | "set_primary" | "survive_region" | "survive_zone", region?: string) =>
+    fetchJSON<{ status: string; action: string; region: string }>("/control/regions", {
+      method: "POST",
+      headers: controlHeaders(),
+      body: JSON.stringify({ action, region: region ?? "" }),
+    }),
   getResources: () => fetchJSON<ResourceInfo[]>("/control/resources"),
   getDbStats: () => fetchJSON<DbStats>("/control/db"),
   runQuery: (sql: string) =>

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/lethingochan27925/hivemind/internal/review"
 )
@@ -52,6 +53,12 @@ func (s *Server) DecideReview(w http.ResponseWriter, r *http.Request) {
 	err := review.SubmitReview(r.Context(), s.DB, req.TaskID, req.ReviewerID, req.Decision, req.Notes)
 	if err != nil {
 		log.Printf("submitting review: %v", err)
+		// Task khong con pending_review (bi re-queue hoac da quyet) -> 409 voi
+		// thong diep ro rang, khong phai loi SQL tho.
+		if strings.Contains(err.Error(), "no rows") {
+			http.Error(w, "task is no longer awaiting review - it was re-queued or already decided", http.StatusConflict)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

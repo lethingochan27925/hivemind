@@ -78,6 +78,18 @@ done
 log "Running terraform destroy"
 cd "$TERRAFORM_DIR"
 terraform init >/dev/null
+
+# S3 co versioning khong xoa duoc khi con version/delete-marker -> don truoc.
+for B in $(terraform -chdir=terraform output -json 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(' '.join(str(d[k]['value']) for k in ('evidence_bucket','dashboard_bucket_name') if k in d))" 2>/dev/null); do
+  echo "  don bucket $B"
+  aws s3api list-object-versions --bucket "$B" --output json \
+    --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' > /tmp/_v.json 2>/dev/null \
+    && aws s3api delete-objects --bucket "$B" --delete file:///tmp/_v.json >/dev/null 2>&1 || true
+  aws s3api list-object-versions --bucket "$B" --output json \
+    --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' > /tmp/_d.json 2>/dev/null \
+    && aws s3api delete-objects --bucket "$B" --delete file:///tmp/_d.json >/dev/null 2>&1 || true
+done
+
 terraform destroy -auto-approve
 cd - >/dev/null
 

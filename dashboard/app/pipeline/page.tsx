@@ -5,7 +5,9 @@ import { Panel } from "@/components/ui/panel";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
-import { ExternalLink, GitBranch, ArrowRight } from "lucide-react";
+import { ExternalLink, GitBranch, ArrowRight, Undo2, Loader2 } from "lucide-react";
+import { useState } from "react";
+import { api } from "@/lib/api";
 
 /**
  * Pipeline - the delivery half of the platform. Live GitHub Actions state for
@@ -149,6 +151,8 @@ export default function PipelinePage() {
           </div>
         </Panel>
 
+        <RollbackPanel />
+
         {/* Recent runs */}
         <Panel title="Recent runs" subtitle="latest 15 workflow executions" bodyClassName="p-0">
           {runs.length === 0 ? (
@@ -218,5 +222,52 @@ export default function PipelinePage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * RollbackPanel - the manual brake next to the automated canary: move a
+ * function's `live` alias back to the previous published version, in one click.
+ */
+function RollbackPanel() {
+  const SERVICES = ["agent-worker", "dispatcher", "reaper", "salience-decay", "scoring-api", "dashboard-api"];
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const rollback = async (svc: string) => {
+    if (!confirm(`Roll ${svc} back to its previous published version?`)) return;
+    setBusy(svc);
+    setMsg(null);
+    try {
+      const r = await api.rollbackService(svc);
+      setMsg(`${svc}: alias live moved v${r.from_version} → v${r.to_version}.`);
+    } catch (e) {
+      setMsg(`${svc}: ${(e as Error).message}`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <Panel
+      title="Deployment control"
+      subtitle="manual rollback - move the live alias to the previous version"
+      actions={<Undo2 size={15} className="text-text-tertiary" />}
+    >
+      <div className="flex flex-wrap gap-2">
+        {SERVICES.map((svc) => (
+          <button
+            key={svc}
+            disabled={busy !== null}
+            onClick={() => rollback(svc)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-md border border-border text-[13px] text-text-secondary hover:text-text-primary hover:border-border-strong disabled:opacity-40 transition-colors"
+          >
+            {busy === svc ? <Loader2 size={13} className="animate-spin" /> : <Undo2 size={13} />}
+            {svc}
+          </button>
+        ))}
+      </div>
+      {msg && <div className="mt-3 text-[13px] text-text-secondary border-t border-border pt-2.5">{msg}</div>}
+    </Panel>
   );
 }

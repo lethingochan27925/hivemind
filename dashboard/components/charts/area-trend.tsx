@@ -9,16 +9,17 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
+import { PASTEL, CHART_CHROME } from "@/lib/palette";
 
 /**
  * AreaTrend - a single-series filled line for time-bucketed metrics
- * (memory-recall hits, throughput). Deliberately minimal chrome.
+ * (memory-recall hits, throughput). Deliberately minimal chrome; theme-safe.
  */
 export function AreaTrend({
   data,
   xKey,
   yKey,
-  color = "#5c9dff",
+  color = PASTEL.blue,
   height = 200,
   unit = "",
 }: {
@@ -40,17 +41,17 @@ export function AreaTrend({
               <stop offset="100%" stopColor={color} stopOpacity={0} />
             </linearGradient>
           </defs>
-          <CartesianGrid stroke="#1a1d24" strokeDasharray="2 3" vertical={false} />
+          <CartesianGrid stroke={CHART_CHROME.grid} strokeDasharray="2 3" vertical={false} />
           <XAxis
             dataKey={xKey}
-            stroke="#4b515e"
+            stroke={CHART_CHROME.axis}
             fontSize={10}
             tickLine={false}
-            axisLine={{ stroke: "#232732" }}
+            axisLine={{ stroke: CHART_CHROME.grid }}
             minTickGap={24}
           />
           <YAxis
-            stroke="#4b515e"
+            stroke={CHART_CHROME.axis}
             fontSize={10}
             tickLine={false}
             axisLine={false}
@@ -58,15 +59,15 @@ export function AreaTrend({
             allowDecimals={false}
           />
           <Tooltip
-            cursor={{ stroke: "#313644" }}
+            cursor={{ stroke: CHART_CHROME.cursor }}
             contentStyle={{
-              background: "#121419",
-              border: "1px solid #313644",
-              borderRadius: 6,
+              background: "var(--color-bg-panel)",
+              border: "1px solid var(--color-border-strong)",
+              borderRadius: 8,
               fontSize: 11,
               padding: "6px 8px",
             }}
-            labelStyle={{ color: "#a3a9b5" }}
+            labelStyle={{ color: "var(--color-text-secondary)" }}
             formatter={(v) => [`${v ?? ""}${unit}`, ""] as [string, string]}
           />
           <Area
@@ -76,7 +77,7 @@ export function AreaTrend({
             strokeWidth={1.75}
             fill={`url(#${gradId})`}
             dot={false}
-            activeDot={{ r: 3, fill: color, stroke: "#0a0b0d", strokeWidth: 2 }}
+            activeDot={{ r: 3, fill: color, strokeWidth: 0 }}
           />
         </AreaChart>
       </ResponsiveContainer>

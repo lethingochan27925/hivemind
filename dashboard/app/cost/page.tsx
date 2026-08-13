@@ -6,6 +6,9 @@ import { Panel } from "@/components/ui/panel";
 import { Stat } from "@/components/ui/stat";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
+import { PASTEL } from "@/lib/palette";
+import { BudgetPanel } from "@/components/control/budget-panel";
+import { CloudCostPanel } from "@/components/control/cloud-cost-panel";
 import { BarList } from "@/components/charts/bar-list";
 import { Coins, DollarSign } from "lucide-react";
 
@@ -23,6 +26,9 @@ export default function CostPage() {
       />
 
       <div className="p-6 space-y-5 hm-enter">
+        <BudgetPanel />
+        <CloudCostPanel bedrockToday={data?.estimated_cost_usd_today} />
+
         <div className="grid grid-cols-2 border border-border rounded-md divide-x divide-border bg-bg-panel/40">
           <Stat
             label="Tokens today"
@@ -50,7 +56,7 @@ export default function CostPage() {
                   label: a.agent_id.slice(0, 16),
                   value: Math.round(a.estimated_cost_usd * 10000) / 10000,
                 }))}
-                color="#6ccf8e"
+                color={PASTEL.green}
               />
             ) : (
               <EmptyState message="No token usage recorded today" />

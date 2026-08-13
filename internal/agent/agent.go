@@ -11,7 +11,6 @@ import (
 
 	"github.com/lethingochan27925/hivemind/internal/config"
 	"github.com/lethingochan27925/hivemind/internal/memory"
-	"github.com/lethingochan27925/hivemind/internal/scorer"
 	"github.com/lethingochan27925/hivemind/pkg/bedrock"
 	"github.com/lethingochan27925/hivemind/pkg/cockroach"
 	"github.com/lethingochan27925/hivemind/pkg/mcp"
@@ -131,11 +130,14 @@ func (w *Worker) processTask(ctx context.Context, task *memory.Task) {
 		return
 	}
 
-	if txn.RiskScore() < scorer.LowThreshold {
+	// Nguong do control plane dat (system_policy), fallback ve hang so mac dinh.
+	pol := LoadPolicy(ctx, w.db)
+
+	if txn.RiskScore() < pol.RiskLow {
 		w.autoDecide(ctx, task.ID, task.TransactionID, txn, "legit", "auto_approve")
 		return
 	}
-	if txn.RiskScore() > scorer.HighThreshold {
+	if txn.RiskScore() > pol.RiskHigh {
 		w.autoDecide(ctx, task.ID, task.TransactionID, txn, "fraud", "auto_block")
 		return
 	}
@@ -146,6 +148,31 @@ func (w *Worker) processTask(ctx context.Context, task *memory.Task) {
 	memoryTexts := formatMemoryHits(memoryHits)
 	customerTexts := formatCustomerHistory(customerHistory)
 	result := CallClaude(ctx, w.bedrock, txn, memoryTexts, customerTexts)
+
+	// Khi model khong tra loi duoc, verdict den tu ruleBasedFallback chu khong
+	// phai suy luan that. Policy 'requeue' tra task ve hang doi de thu lai sau,
+	// thay vi day mot phan doan yeu sang cho nguoi duyet.
+	if result.Step == "fallback" && pol.FallbackAction == "requeue" {
+		if _, err := w.db.Pool.Exec(ctx, `
+			UPDATE tasks
+			SET status = 'pending', claimed_by = NULL, claimed_at = NULL,
+			    heartbeat_at = NULL, step = NULL
+			WHERE id = $1
+		`, task.ID); err != nil {
+			fmt.Printf("  [error] requeue after fallback failed: %v\n", err)
+		} else {
+			reason := "model unavailable - requeued by policy instead of escalating"
+			w.writeAudit(ctx, memory.AuditEntry{
+				TaskID:        task.ID,
+				TransactionID: task.TransactionID,
+				AgentID:       w.ID,
+				Action:        "task_requeued",
+				Reasoning:     &reason,
+			})
+			fmt.Println("  Requeued by fallback policy (model unavailable)")
+			return
+		}
+	}
 
 	sp.PartialReasoning = result.Rationale
 	w.saveCheckpoint(ctx, task.ID, "reasoned", sp)

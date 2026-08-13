@@ -7,22 +7,78 @@ import { Panel } from "@/components/ui/panel";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
-import { Check, X, User } from "lucide-react";
+import { Check, X, User, CornerUpLeft, Loader2, CheckCheck } from "lucide-react";
 
 const money = (n: number) =>
   n.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
 export default function ReviewsPage() {
   const { data, error, lastUpdated } = useLive(api.getReviews, 8000);
-  const reviews = data ?? [];
+
+  // Bo row khoi danh sach ngay lap tuc (danh sach live se dong bo o vong sau).
+  const [removed, setRemoved] = useState<Set<string>>(new Set());
+  const removeLocal = (ids: string[]) => setRemoved((prev) => new Set([...prev, ...ids]));
+
+  const reviews = (data ?? []).filter((r) => !removed.has(r.task_id));
 
   const [selected, setSelected] = useState<PendingReview | null>(null);
   const [reviewerId, setReviewerId] = useState("");
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [bulkMsg, setBulkMsg] = useState<string | null>(null);
+  const [bulkBusy, setBulkBusy] = useState<string | null>(null);
 
   const active = selected && reviews.find((r) => r.task_id === selected.task_id) ? selected : null;
+
+  const toggle = (id: string) => {
+    const next = new Set(picked);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setPicked(next);
+  };
+
+  // Bulk: quyet nhieu case mot luc, hoac tra ca loat ve cho agent dieu tra lai.
+  const bulk = async (kind: "approved" | "rejected" | "sendback") => {
+    const ids = [...picked];
+    if (ids.length === 0 || (kind !== "sendback" && !reviewerId.trim())) return;
+    setBulkBusy(kind);
+    setBulkMsg(null);
+    try {
+      if (kind === "sendback") {
+        const results = await Promise.allSettled(ids.map((id) => api.requeueTask(id)));
+        const ok = results.filter((r) => r.status === "fulfilled").length;
+        setBulkMsg(`Sent ${ok}/${ids.length} case(s) back to the agent for re-investigation.`);
+      } else {
+        const r = await api.bulkReview(ids, kind, reviewerId.trim(), notes.trim());
+        setBulkMsg(`${r.decided} decided${r.failed ? `, ${r.failed} skipped (already resolved)` : ""}.`);
+      }
+      removeLocal(ids);
+      setPicked(new Set());
+      setSelected(null);
+    } catch (e) {
+      setBulkMsg((e as Error).message);
+    } finally {
+      setBulkBusy(null);
+    }
+  };
+
+  const sendBackOne = async () => {
+    if (!active) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      await api.requeueTask(active.task_id);
+      removeLocal([active.task_id]);
+      setSelected(null);
+      setBulkMsg("Case sent back - the agent will investigate it again.");
+    } catch (e) {
+      setSubmitError((e as Error).message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const decide = async (decision: "approved" | "rejected") => {
     if (!active || !reviewerId.trim()) return;
@@ -35,10 +91,19 @@ export default function ReviewsPage() {
         decision,
         notes: notes.trim(),
       });
+      removeLocal([active.task_id]);
       setSelected(null);
       setNotes("");
     } catch (e) {
-      setSubmitError((e as Error).message);
+      const m = (e as Error).message;
+      // Case da bi re-queue/da quyet trong luc dang mo form: bo chon, danh sach
+      // live se tu lam moi - khong hien loi API tho.
+      if (m.includes("409") || m.toLowerCase().includes("no longer")) {
+        setSelected(null);
+        setSubmitError("This case was just re-queued or already decided - the queue refreshed itself.");
+      } else {
+        setSubmitError(m);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -62,7 +127,53 @@ export default function ReviewsPage() {
       />
 
       <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-5 hm-enter">
-        <Panel title="Escalated cases" className="lg:col-span-2" bodyClassName="p-0">
+        <Panel
+          title="Escalated cases"
+          className="lg:col-span-2"
+          bodyClassName="p-0"
+          actions={
+            picked.size > 0 ? (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[12px] text-text-tertiary tnum mr-1">{picked.size} selected</span>
+                <button
+                  disabled={bulkBusy !== null || !reviewerId.trim()}
+                  onClick={() => bulk("approved")}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-md border border-green/30 bg-green/10 text-green text-[12px] font-semibold disabled:opacity-40 hover:bg-green/20 transition-colors"
+                  title={reviewerId.trim() ? "Approve all selected" : "Enter a reviewer name first"}
+                >
+                  {bulkBusy === "approved" ? <Loader2 size={12} className="animate-spin" /> : <CheckCheck size={12} />}
+                  Approve all
+                </button>
+                <button
+                  disabled={bulkBusy !== null || !reviewerId.trim()}
+                  onClick={() => bulk("rejected")}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-md border border-red/30 bg-red/10 text-red text-[12px] font-semibold disabled:opacity-40 hover:bg-red/20 transition-colors"
+                >
+                  {bulkBusy === "rejected" ? <Loader2 size={12} className="animate-spin" /> : <X size={12} />}
+                  Reject all
+                </button>
+                <button
+                  disabled={bulkBusy !== null}
+                  onClick={() => bulk("sendback")}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-md border border-blue/30 bg-blue/10 text-blue text-[12px] font-semibold disabled:opacity-40 hover:bg-blue/20 transition-colors"
+                  title="Send back to the agent instead of deciding manually"
+                >
+                  {bulkBusy === "sendback" ? <Loader2 size={12} className="animate-spin" /> : <CornerUpLeft size={12} />}
+                  Back to agent
+                </button>
+                <button
+                  onClick={() => setPicked(new Set())}
+                  className="px-2 py-1 rounded-md border border-border text-[12px] text-text-tertiary hover:text-text-primary transition-colors"
+                >
+                  clear
+                </button>
+              </div>
+            ) : null
+          }
+        >
+          {bulkMsg && (
+            <div className="px-4 py-2 border-b border-border text-[13px] text-text-secondary">{bulkMsg}</div>
+          )}
           {reviews.length === 0 ? (
             <EmptyState
               message="No cases awaiting review"
@@ -73,6 +184,17 @@ export default function ReviewsPage() {
               <table className="w-full text-[14px]">
                 <thead>
                   <tr className="text-left text-text-tertiary border-b border-border bg-bg-inset/40">
+                    <th className="py-2.5 pl-4 pr-1 font-normal w-8">
+                      <input
+                        type="checkbox"
+                        aria-label="Select all"
+                        checked={picked.size > 0 && picked.size === reviews.length}
+                        onChange={(e) =>
+                          setPicked(e.target.checked ? new Set(reviews.map((r) => r.task_id)) : new Set())
+                        }
+                        className="accent-[#7d9bf0]"
+                      />
+                    </th>
                     <th className="py-2.5 px-4 font-normal">Task</th>
                     <th className="py-2.5 px-4 font-normal">Type</th>
                     <th className="py-2.5 px-4 font-normal text-right">Amount</th>
@@ -94,6 +216,15 @@ export default function ReviewsPage() {
                           isSel ? "bg-blue/10" : "hover:bg-bg-panel-hover/60 focus:bg-bg-panel-hover/60"
                         }`}
                       >
+                        <td className="py-2.5 pl-4 pr-1" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${r.task_id.slice(0, 8)}`}
+                            checked={picked.has(r.task_id)}
+                            onChange={() => toggle(r.task_id)}
+                            className="accent-[#7d9bf0]"
+                          />
+                        </td>
                         <td className="py-2.5 px-4 tnum text-text-secondary">{r.task_id.slice(0, 8)}</td>
                         <td className="py-2.5 px-4 text-text-secondary">{r.txn_type}</td>
                         <td className="py-2.5 px-4 tnum text-right text-text-primary">{money(r.amount)}</td>
@@ -172,6 +303,16 @@ export default function ReviewsPage() {
                   Reject
                 </button>
               </div>
+              <button
+                onClick={sendBackOne}
+                disabled={submitting}
+                className="w-full flex items-center justify-center gap-1.5 bg-blue/12 text-blue border border-blue/30 rounded-md py-2 text-[14px] font-medium disabled:opacity-40 hover:bg-blue/20 transition-colors"
+                title="Return this case to the fleet instead of deciding it yourself"
+              >
+                <CornerUpLeft size={14} />
+                Send back to agent
+              </button>
+
               {!reviewerId.trim() && (
                 <p className="text-[12px] text-text-tertiary">
                   Enter a reviewer name - it is written to the audit trail for compliance.

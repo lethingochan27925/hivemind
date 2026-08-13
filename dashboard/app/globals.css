@@ -1,37 +1,69 @@
 @import "tailwindcss";
 
 /*
- * HiveMind Mission Control - operations-console design system.
- * Reference language: Grafana / Datadog / Linear. Dark, dense but readable,
- * monospace numerics, colour used only to encode state. No gradients, no
- * glassmorphism, no decoration.
+ * HiveMind Control Platform - pastel design system, light & dark.
+ * Reference language: Linear / Notion / Stripe dashboards. Airy surfaces,
+ * soft pastel accents used only to encode state, monospace numerics.
+ * Theme is driven by [data-theme] on <html>; light is the default.
  */
 
 :root {
-  /* Surfaces - layered near-black with a faint cool cast */
-  --color-bg-primary: #0a0b0d;
-  --color-bg-panel: #131620;
-  --color-bg-panel-hover: #1b1f2b;
-  --color-bg-inset: #0d0f14;
-  --color-border: #262b38;
-  --color-border-strong: #353c4d;
+  color-scheme: light;
 
-  /* State palette - Grafana-derived, tuned for dark */
-  --color-blue: #5c9dff;
-  --color-green: #6ccf8e;
-  --color-yellow: #f5c542;
-  --color-red: #f2586b;
-  --color-purple: #bd82e6;
-  --color-orange: #ff9d47;
-  --color-teal: #48d4c4;
+  /* Surfaces - airy, faint lavender-neutral cast */
+  --color-bg-primary: #f5f6fa;
+  --color-bg-panel: #ffffff;
+  --color-bg-panel-hover: #eef0f7;
+  --color-bg-inset: #f2f3f9;
+  --color-border: #e5e7f0;
+  --color-border-strong: #d2d6e6;
 
-  /* Text ramp - brighter for readability */
-  --color-text-primary: #eef0f3;
-  --color-text-secondary: #aeb4c0;
-  --color-text-tertiary: #737b8a;
+  /* State palette - pastel-leaning, still readable as text on white */
+  --color-blue: #5b7fe8;
+  --color-green: #33a172;
+  --color-yellow: #c8952e;
+  --color-red: #e0566d;
+  --color-purple: #8f6fe0;
+  --color-orange: #dd7a3f;
+  --color-teal: #2ba49b;
+
+  /* Text ramp */
+  --color-text-primary: #22263b;
+  --color-text-secondary: #575d78;
+  --color-text-tertiary: #8d92aa;
+
+  /* Component tokens */
+  --node-shadow: 0 1px 2px rgba(35, 38, 59, 0.06), 0 4px 14px -6px rgba(35, 38, 59, 0.1);
 
   --font-mono: ui-monospace, "SFMono-Regular", "Menlo", "Consolas", "Liberation Mono", monospace;
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Soft ink, not pure black */
+  --color-bg-primary: #141620;
+  --color-bg-panel: #1b1e2b;
+  --color-bg-panel-hover: #242838;
+  --color-bg-inset: #20232f;
+  --color-border: #2d3145;
+  --color-border-strong: #3f4460;
+
+  /* Pale pastel accents glow gently on ink */
+  --color-blue: #96b1f5;
+  --color-green: #7fd3a8;
+  --color-yellow: #eac97e;
+  --color-red: #f2939f;
+  --color-purple: #c0a9f0;
+  --color-orange: #f0aa78;
+  --color-teal: #7fd4cb;
+
+  --color-text-primary: #eceef6;
+  --color-text-secondary: #b0b5c8;
+  --color-text-tertiary: #7c819b;
+
+  --node-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 2px 8px -2px rgba(0, 0, 0, 0.5);
 }
 
 @theme inline {
@@ -63,6 +95,14 @@ body {
   font-size: 15px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Calm cross-fade when switching themes */
+body,
+body * {
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease;
 }
 
 /* Tabular figures everywhere numbers matter */

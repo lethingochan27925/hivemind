@@ -3,6 +3,9 @@
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { useLive } from "@/lib/use-live";
+import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { LangToggle } from "@/components/layout/lang-toggle";
+import { useT } from "@/lib/i18n";
 import { Command, CircleDot, AlertTriangle, DollarSign } from "lucide-react";
 
 /**
@@ -11,6 +14,7 @@ import { Command, CircleDot, AlertTriangle, DollarSign } from "lucide-react";
  * anything alarming, what has today cost. Every chip navigates to its page.
  */
 export function Topbar() {
+  const t = useT();
   const fleet = useLive(api.getFleetStatus, 8000);
   const infra = useLive(api.getInfrastructure, 20000);
   const cost = useLive(api.getCost, 60000);
@@ -37,15 +41,15 @@ export function Topbar() {
         }`}
       >
         <span className={`w-1.5 h-1.5 rounded-full ${running ? "bg-green hm-pulse" : "bg-text-tertiary"}`} />
-        {running ? "FLEET RUNNING" : "FLEET PAUSED"}
+        {running ? t("FLEET RUNNING") : t("FLEET PAUSED")}
       </Link>
 
       {/* Queue depth */}
       <Link href="/" className={`${chip} border-border bg-bg-inset/50 text-text-secondary hover:text-text-primary`}>
         <CircleDot size={11} className="text-blue" />
-        <span className="tnum">{pending}</span> pending
+        <span className="tnum">{pending}</span> {t("pending")}
         <span className="text-text-tertiary">·</span>
-        <span className="tnum">{investigating}</span> active
+        <span className="tnum">{investigating}</span> {t("active")}
       </Link>
 
       {/* Alarms */}
@@ -60,28 +64,32 @@ export function Topbar() {
         <AlertTriangle size={11} className={alarms > 0 ? "text-red" : "text-green"} />
         {alarms > 0 ? (
           <>
-            <span className="tnum">{alarms}</span> alarm{alarms > 1 ? "s" : ""}
+            <span className="tnum">{alarms}</span> {alarms > 1 ? t("alarms") : t("alarm")}
           </>
         ) : (
-          "systems OK"
+          t("systems OK")
         )}
       </Link>
 
       {/* Spend today */}
       <Link href="/cost" className={`${chip} border-border bg-bg-inset/50 text-text-secondary hover:text-text-primary`}>
         <DollarSign size={11} className="text-green" />
-        <span className="tnum">{spend != null ? `$${spend.toFixed(4)}` : "—"}</span> today
+        <span className="tnum">{spend != null ? `$${spend.toFixed(4)}` : "—"}</span> {t("today")}
       </Link>
+
+      <span className="ml-auto" />
+      <LangToggle />
+      <ThemeToggle />
 
       {/* Command palette hint */}
       <button
         onClick={() => window.dispatchEvent(new CustomEvent("hm-cmdk"))}
-        className={`${chip} ml-auto border-border bg-bg-inset/50 text-text-tertiary hover:text-text-primary hover:border-border-strong`}
+        className={`${chip} border-border bg-bg-inset/50 text-text-tertiary hover:text-text-primary hover:border-border-strong`}
         title="Command palette"
       >
         <Command size={11} />
         <span>K</span>
-        <span className="hidden sm:inline text-text-tertiary">· command</span>
+        <span className="hidden sm:inline text-text-tertiary">· {t("command")}</span>
       </button>
     </header>
   );

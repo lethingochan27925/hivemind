@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, QueryResult } from "@/lib/api";
 import { useLive } from "@/lib/use-live";
 import { Panel } from "@/components/ui/panel";
@@ -8,7 +8,7 @@ import { Stat } from "@/components/ui/stat";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
-import { Database, Play, Loader2, Table2 } from "lucide-react";
+import { Database, Play, Loader2, Table2, Download } from "lucide-react";
 
 const PRESETS: { label: string; sql: string }[] = [
   { label: "Verdict breakdown", sql: "SELECT verdict, COUNT(*) AS n FROM tasks WHERE verdict IS NOT NULL GROUP BY verdict ORDER BY n DESC" },
@@ -46,9 +46,16 @@ export default function DatabasePage() {
     }
   };
 
+  // Deep-link tu global search: /database?sql=<query> tu dien va chay luon.
+  useEffect(() => {
+    const preset = new URLSearchParams(window.location.search).get("sql");
+    if (preset) run(preset);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const fmt = (v: unknown) =>
     v === null || v === undefined
-      ? "-"
+      ? "—"
       : typeof v === "object"
         ? JSON.stringify(v)
         : String(v);
@@ -57,7 +64,7 @@ export default function DatabasePage() {
     <div>
       <PageHeader
         title="Database"
-        description="CockroachDB - the fleet's shared memory. Inspect tables and run read-only queries."
+        description="CockroachDB — the fleet's shared memory. Inspect tables and run read-only queries."
         lastUpdated={lastUpdated}
         error={error}
         actions={
@@ -80,12 +87,12 @@ export default function DatabasePage() {
               icon={<Table2 size={13} />}
             />
           ))}
-          {!data && <Stat label="Loading…" value="-" />}
+          {!data && <Stat label="Loading…" value="—" />}
         </div>
 
         <Panel
           title="Query console"
-          subtitle="read-only - SELECT / SHOW / WITH"
+          subtitle="read-only — SELECT / SHOW / WITH"
           actions={<Database size={15} className="text-text-tertiary" />}
         >
           <div className="flex flex-wrap gap-2 mb-3">
@@ -122,6 +129,16 @@ export default function DatabasePage() {
               <span className="text-[13px] text-text-tertiary tnum">
                 {result.row_count} rows{result.truncated ? " (truncated at 200)" : ""}
               </span>
+            )}
+            {result && result.rows.length > 0 && (
+              <button
+                onClick={() => downloadCsv(result)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-md border border-border text-[13px] text-text-secondary hover:text-text-primary hover:border-border-strong transition-colors"
+                title="Export these rows as CSV"
+              >
+                <Download size={14} />
+                CSV
+              </button>
             )}
             <span className="ml-auto text-[12px] text-text-tertiary">
               Mutating statements are rejected server-side.
@@ -168,4 +185,20 @@ export default function DatabasePage() {
       </div>
     </div>
   );
+}
+
+/** downloadCsv - xuat ket qua query hien tai ra file, khong can backend. */
+function downloadCsv(result: QueryResult) {
+  const NEEDS_QUOTE = new RegExp('[",\\n]');
+  const esc = (v: unknown) => {
+    const s = v === null || v === undefined ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
+    return NEEDS_QUOTE.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const csv = [result.columns.join(","), ...result.rows.map((r) => r.map(esc).join(","))].join("\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "hivemind-query.csv";
+  a.click();
+  URL.revokeObjectURL(url);
 }
