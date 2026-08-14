@@ -93,6 +93,13 @@ jobs:
         working-directory: terraform
         run: terraform init -input=false
 
+      # A runner killed mid-apply leaves its S3 lock behind and every later
+      # deploy then fails at "Error acquiring the state lock". The script only
+      # releases locks older than the age threshold, so a genuinely running
+      # apply (serialized by the concurrency group anyway) is never broken.
+      - name: Clear stale state lock
+        run: bash scripts/tf-unlock.sh || true
+
       - name: Terraform apply
         working-directory: terraform
         env:

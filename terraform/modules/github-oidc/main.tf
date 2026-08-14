@@ -110,6 +110,10 @@ resource "aws_iam_role_policy" "github_actions" {
         Action = [
           "s3:GetObject",
           "s3:PutObject",
+          # DeleteObject la buoc NHA lock cua backend use_lockfile. Thieu no,
+          # moi apply tu CI thanh cong roi van do o buoc cuoi va de lai mot
+          # lock chet - dung hai lan ket lock hom 14/08.
+          "s3:DeleteObject",
           "s3:ListBucket"
         ]
         Resource = [

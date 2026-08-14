@@ -94,8 +94,14 @@ tf-plan: ## terraform plan
 	@$(ENV) source scripts/load-tf-vars.sh >/dev/null && $(TF) plan
 
 .PHONY: tf-apply
-tf-apply: ## terraform apply
-	@$(ENV) source scripts/load-tf-vars.sh >/dev/null && $(TF) apply -auto-approve
+tf-apply: ## terraform apply (tu go lock chet roi thu lai mot lan)
+	@$(ENV) source scripts/load-tf-vars.sh >/dev/null && $(TF) apply -auto-approve || \
+	 { ./scripts/tf-unlock.sh && \
+	   $(ENV) source scripts/load-tf-vars.sh >/dev/null && $(TF) apply -auto-approve; }
+
+.PHONY: unlock
+unlock: ## Go lock terraform chet (chi go khi lock gia hon 20 phut)
+	@$(ENV) ./scripts/tf-unlock.sh
 
 .PHONY: iam
 iam: ## Ap lai rieng IAM policy cua dashboard-api

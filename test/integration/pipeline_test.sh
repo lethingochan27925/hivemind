@@ -258,6 +258,8 @@ done
 
 has deploy-staging.yml 'is not configured' \
     "deploy-staging preflights the secrets and names the missing one"
+has deploy-staging.yml 'tf-unlock' \
+    "deploy-staging clears stale state locks before applying (age-gated, never a live lock)"
 
 # ---------------------------------------------------------------------------
 echo
