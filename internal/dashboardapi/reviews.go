@@ -63,6 +63,15 @@ func (s *Server) DecideReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Vong lap hoc tu con nguoi: phan quyet cua reviewer duoc nhung vao
+	// case_memory va ghim salience - lan sau gap case tuong tu, agent recall
+	// duoc dieu con nguoi da day. Best-effort: loi hoc khong lam hong review.
+	learned := true
+	if err := s.LearnFromReview(r.Context(), req.TaskID, req.Decision, req.ReviewerID, req.Notes); err != nil {
+		log.Printf("learning from review %s: %v", req.TaskID, err)
+		learned = false
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	json.NewEncoder(w).Encode(map[string]interface{}{"status": "ok", "memory_learned": learned})
 }

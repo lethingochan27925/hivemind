@@ -51,6 +51,19 @@ export default function CostPage() {
           />
         </div>
 
+        {data?.price_source && (
+          <p className="text-[12px] text-text-tertiary">
+            Unit price for {data.priced_model ?? "model"}: $
+            {(data.input_per_1k ?? 0).toFixed(5)}/1K in · $
+            {(data.output_per_1k ?? 0).toFixed(5)}/1K out —{" "}
+            {data.price_source === "aws-pricing-api"
+              ? "fetched live from the AWS Pricing API"
+              : data.price_source === "hybrid"
+                ? "input live from the AWS Pricing API · output from the published list price (the catalog has no output SKU for this model)"
+                : "published list price (AWS Pricing API has no matching SKU)"}
+          </p>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <Panel title="Spend by agent" subtitle="estimated USD, Claude Haiku pricing">
             {agents.length > 0 ? (

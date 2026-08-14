@@ -317,7 +317,7 @@ func (w *Worker) saveCheckpoint(ctx context.Context, taskID, step string, sp *Sc
 }
 
 func (w *Worker) writeCaseMemoryAndAudit(ctx context.Context, txn *mcp.Transaction, taskID, transactionID string, result ReasoningResult) {
-	pattern := classifyPattern(txn)
+	pattern := ClassifyPattern(txn)
 	summary := fmt.Sprintf(
 		"type=%s amount=%.2f error_orig=%.2f error_dest=%.2f. Verdict: %s. %s",
 		txn.Type, txn.Amount, txn.ErrorBalanceOrig, txn.ErrorBalanceDest,
@@ -336,7 +336,7 @@ func (w *Worker) writeCaseMemoryAndAudit(ctx context.Context, txn *mcp.Transacti
 		keySignals = append(keySignals, pattern)
 	}
 
-	err = memory.WriteCaseMemory(ctx, w.db, memory.NewCase{
+	_, err = memory.WriteCaseMemory(ctx, w.db, memory.NewCase{
 		Summary:         summary,
 		Verdict:         result.Verdict,
 		ConfidenceAvg:   result.Confidence,
@@ -354,7 +354,10 @@ func (w *Worker) writeCaseMemoryAndAudit(ctx context.Context, txn *mcp.Transacti
 	}
 }
 
-func classifyPattern(txn *mcp.Transaction) string {
+// ClassifyPattern gan nhan chu ky gian lan cho mot giao dich. Xuat ra ngoai
+// vi vong lap hoc-tu-con-nguoi (dashboardapi/learn.go) phai gan nhan y het
+// agent - hai nguon ky uc chung mot he phan loai.
+func ClassifyPattern(txn *mcp.Transaction) string {
 	if txn.OldBalanceOrig == txn.Amount && txn.NewBalanceOrig == 0 {
 		return "balance_wipe"
 	}

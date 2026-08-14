@@ -19,6 +19,14 @@ if [ -z "${AWS_ACCESS_KEY_ID:-}" ] && [ -f .env ]; then
   set -a; . ./.env; set +a
 fi
 
+# Docker chet -> `aws ecr get-login-password | docker login` vo pipe, va aws CLI
+# (viet bang Python) chi kip keu "BrokenPipeError" kho hieu roi thoat. Kiem tra
+# truoc de loi that (daemon khong chay) hien ra thay vi trieu chung.
+if ! docker info >/dev/null 2>&1; then
+  echo "[ERROR] Docker daemon khong chay. Mo Docker Desktop roi chay lai."
+  exit 1
+fi
+
 PROJECT="${PROJECT:-hivemind}"
 ENVIRONMENT="${ENVIRONMENT:-dev}"
 REGION="${AWS_DEFAULT_REGION:-ap-southeast-1}"

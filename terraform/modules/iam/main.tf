@@ -221,6 +221,22 @@ resource "aws_iam_role_policy" "dashboard_api" {
     Version = "2012-10-17"
     Statement = [
       {
+        # Vong lap hoc tu con nguoi: control plane embed phan quyet cua
+        # reviewer de nhung vao case_memory. Chi model embedding - khong Claude.
+        # Don gia token lay song tu AWS Pricing API (internal/pricing).
+        # Pricing API chi chap nhan Resource "*".
+        Sid      = "ReadLivePricing"
+        Effect   = "Allow"
+        Action   = ["pricing:GetProducts"]
+        Resource = "*"
+      },
+      {
+        Sid      = "EmbedHumanLessons"
+        Effect   = "Allow"
+        Action   = ["bedrock:InvokeModel"]
+        Resource = local.bedrock_model_arns
+      },
+      {
         Sid      = "ReadAlarmState"
         Effect   = "Allow"
         Action   = ["cloudwatch:DescribeAlarms", "cloudwatch:GetMetricData"]

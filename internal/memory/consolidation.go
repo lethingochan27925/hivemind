@@ -24,7 +24,7 @@ type NewCase struct {
 	SourceTaskID    string
 }
 
-func WriteCaseMemory(ctx context.Context, db *cockroach.Client, c NewCase) error {
+func WriteCaseMemory(ctx context.Context, db *cockroach.Client, c NewCase) (string, error) {
 	var existingID string
 	var similarity float64
 
@@ -45,24 +45,26 @@ func WriteCaseMemory(ctx context.Context, db *cockroach.Client, c NewCase) error
 			WHERE id = $2
 		`, c.Summary, existingID)
 		if err != nil {
-			return fmt.Errorf("merging case memory: %w", err)
+			return "", fmt.Errorf("merging case memory: %w", err)
 		}
-		return nil
+		return existingID, nil
 	}
 
-	_, err = db.Pool.Exec(ctx, `
+	var newID string
+	err = db.Pool.QueryRow(ctx, `
 		INSERT INTO case_memory (
 			summary, verdict, confidence_avg, pattern_type, key_signals,
 			transaction_type, amount_range, error_orig_sign, error_dest_sign,
 			embedding, source_task_id, created_at
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::vector, $11, now())
+		RETURNING id
 	`, c.Summary, c.Verdict, c.ConfidenceAvg, c.PatternType, c.KeySignals,
 		c.TransactionType, c.AmountRange, c.ErrorOrigSign, c.ErrorDestSign,
-		c.EmbeddingStr, c.SourceTaskID)
+		c.EmbeddingStr, c.SourceTaskID).Scan(&newID)
 	if err != nil {
-		return fmt.Errorf("inserting case memory: %w", err)
+		return "", fmt.Errorf("inserting case memory: %w", err)
 	}
-	return nil
+	return newID, nil
 }
 
 func AmountRange(amount float64) string {

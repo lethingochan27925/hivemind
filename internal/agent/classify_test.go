@@ -50,8 +50,8 @@ func TestClassifyPattern(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			txn := c.txn
-			if got := classifyPattern(&txn); got != c.want {
-				t.Errorf("classifyPattern() = %q, want %q", got, c.want)
+			if got := ClassifyPattern(&txn); got != c.want {
+				t.Errorf("ClassifyPattern() = %q, want %q", got, c.want)
 			}
 		})
 	}

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"sort"
 	"strconv"
@@ -183,7 +184,7 @@ func (s *Server) GetBudget(w http.ResponseWriter, r *http.Request) {
 	`).Scan(&tokensIn, &tokensOut)
 
 	st := BudgetStatus{
-		SpendToday: estimateCost(tokensIn, tokensOut),
+		SpendToday: livePrices(ctx).Estimate(tokensIn, tokensOut),
 		Budget:     p.DailyBudgetUSD,
 		AutoPause:  p.AutoPauseOnBudget,
 	}
@@ -457,6 +458,10 @@ func (s *Server) TaskControl(w http.ResponseWriter, r *http.Request) {
 			INSERT INTO audit_log (task_id, transaction_id, agent_id, action, reasoning, reviewer_id, review_notes, created_at)
 			VALUES ($1, $2, $3, 'human_reviewed', $4, $5, $6, now())
 		`, taskID, txnID, "control-plane", notes, body.ReviewerID, notes)
+		// Override la phan quyet ro rang nhat cua con nguoi - cung mot bai hoc.
+		if err := s.learnHumanLesson(ctx, taskID, txnID, body.Verdict, body.ReviewerID, notes); err != nil {
+			log.Printf("learning from override %s: %v", taskID, err)
+		}
 		writeJSON(w, map[string]string{"status": "ok", "action": "override", "verdict": body.Verdict})
 
 	default:

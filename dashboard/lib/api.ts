@@ -136,6 +136,10 @@ export interface AgentCost {
 export interface CostData {
   total_tokens_today: number;
   estimated_cost_usd_today: number;
+  input_per_1k?: number;
+  output_per_1k?: number;
+  price_source?: string;
+  priced_model?: string;
   by_agent: AgentCost[] | null;
 }
 

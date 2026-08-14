@@ -82,3 +82,28 @@ Every action, with its reasoning, token cost, latency, and (for escalations) the
 3. **Multi-region, strongly-consistent SQL** — `SKIP LOCKED` coordination, foreign-keyed audit, RPO-0 region survival.
 
 Two would satisfy the contest minimum; HiveMind uses all three because each maps to a real requirement of running an agent fleet, not to a checkbox. The rationale is recorded in [ADR-0001](adr/0001-cockroachdb-as-agentic-memory.md).
+
+## Human-taught memories
+
+The fleet has two sources of episodic memory, and they flow through the same
+consolidation pipeline:
+
+1. **Self-learned** — every case the agent decides is summarised, embedded and
+   merged into `case_memory` (the ~34:1 distillation described above).
+2. **Human-taught** — when a reviewer decides an escalated case (Review Queue
+   approve/reject) or an operator overrides a verdict (Transactions page), that
+   decision is embedded and written into the same table with
+   `key_signals = ['human_reviewed']`, confidence 1.0, and **salience pinned at
+   2.0** — the ceiling salience decay cannot cross. The fleet can forget its own
+   inferences; it never forgets what a human taught it.
+
+The next investigation of a similar transaction recalls the human's decision
+through the exact same vector search as any other memory. Nothing about the
+recall path knows or cares that the teacher was human — which is the point:
+one memory, two teachers.
+
+Count them live:
+
+```sql
+SELECT COUNT(*) FROM case_memory WHERE 'human_reviewed' = ANY(key_signals);
+```
