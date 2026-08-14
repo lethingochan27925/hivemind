@@ -1,102 +1,207 @@
 name: CI
 
+# Hermetic gate for every push and pull request: no cloud account, no database,
+# no secrets. It therefore runs identically on a fork, and a green CI means the
+# same checks a contributor can run locally with `make check` have passed.
+#
+# Tool versions live in `env` below and are asserted to match every other
+# workflow by test/integration/pipeline_test.sh — a drift between the Terraform
+# version CI validates with and the one CD applies with is what broke the deploy
+# chain once already.
+
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: '1.25'
+  NODE_VERSION: '22'
+  TF_VERSION: '1.14.8'
 
 jobs:
-  go-build-test:
+  go:
+    name: Go build, vet, fmt, test
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
 
       - name: Build
         run: go build ./...
 
-      - name: Unit tests
-        run: go test ./... -v
+      - name: Vet
+        run: go vet ./...
 
-  go-fmt-check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
       - name: Check gofmt
         run: |
-          UNFORMATTED=$(gofmt -l .)
+          UNFORMATTED=$(gofmt -l cmd internal pkg test)
           if [ -n "$UNFORMATTED" ]; then
-            echo "Files not gofmt'd:"
+            echo "::error::these files are not gofmt'd:"
             echo "$UNFORMATTED"
             exit 1
           fi
 
-  go-vet:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
-      - name: Vet
-        run: go vet ./...
+      # ./cmd/... matters: buildMux() panics on a duplicate route, and that panic
+      # only surfaces at Lambda init — as a 502 on every request, after deploy.
+      - name: Test
+        run: go test ./... -count=1
 
-  python-scoring-service:
+  dashboard:
+    name: Dashboard lint and build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install
+        working-directory: dashboard
+        run: npm ci
+
+      - name: Lint
+        working-directory: dashboard
+        run: npx eslint app components lib
+
+      - name: Build static export
+        working-directory: dashboard
+        run: npm run build
+
+  python:
+    name: Python scoring service
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: services/scoring-python/requirements.txt
+
       - name: Install dependencies
         run: pip install --no-cache-dir -r services/scoring-python/requirements.txt
+
       - name: Syntax check
         run: python -m py_compile services/scoring-python/main.py
+
       - name: Import check
         run: python -c "import sys; sys.path.insert(0, 'services/scoring-python'); import main"
 
-  docker-build-check:
+  docker:
+    name: Image build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
+      fail-fast: false
+      # Same service -> cmd_path mapping as build-and-push.yml. pipeline_test.sh
+      # asserts the two stay identical, so CI cannot pass on a service that CD
+      # would then fail to build.
       matrix:
-        service: [worker, dispatcher, heartbeat-reaper, salience-decay, scoring-api, dashboard-api]
+        include:
+          - service: agent-worker
+            cmd_path: ./cmd/worker
+          - service: dispatcher
+            cmd_path: ./cmd/dispatcher
+          - service: reaper
+            cmd_path: ./cmd/heartbeat-reaper
+          - service: salience-decay
+            cmd_path: ./cmd/salience-decay
+          - service: scoring-api
+            cmd_path: ./cmd/scoring-api
+          - service: dashboard-api
+            cmd_path: ./cmd/dashboard-api
     steps:
       - uses: actions/checkout@v4
-      - name: Build ${{ matrix.service }} image
+
+      # --provenance=false --sbom=false is mandatory: buildx otherwise emits an
+      # OCI image index that Lambda's update-function-code rejects.
+      - name: Build ${{ matrix.service }}
         run: |
           docker build --provenance=false --sbom=false -f Dockerfile.lambda-go \
-            --build-arg SERVICE_PATH=./cmd/${{ matrix.service }} \
-            -t hivemind-${{ matrix.service }}:ci .
+            --build-arg SERVICE_PATH=${{ matrix.cmd_path }} \
+            -t "hivemind-${{ matrix.service }}:ci" .
 
-  docker-build-scoring-python:
+  docker-python:
+    name: Image build (scoring-python)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - name: Build scoring-python image
+
+      - name: Build scoring-python
         run: |
           docker build --provenance=false --sbom=false -f services/scoring-python/Dockerfile \
             -t hivemind-scoring-python:ci .
 
-  terraform-validate:
+  terraform:
+    name: Terraform validate
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: terraform
     steps:
       - uses: actions/checkout@v4
+
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: '1.9.0'
-      - name: Init (backend only, no state access needed for validate)
-        run: terraform init -backend=false
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Init (no backend — validation needs no state)
+        run: terraform init -backend=false -input=false
+
       - name: Validate
         run: terraform validate
+
       - name: Format check
         run: terraform fmt -check -recursive
+
+  actionlint:
+    name: Workflow lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install actionlint
+        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+
+      # -shellcheck= disables the shell linter so this job checks workflow
+      # semantics only: unknown contexts, bad matrix references, invalid `if`.
+      - name: Lint workflows
+        run: actionlint -color -shellcheck=
+
+  pipeline-invariants:
+    name: Pipeline invariants
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assert CI/CD invariants
+        run: bash test/integration/pipeline_test.sh

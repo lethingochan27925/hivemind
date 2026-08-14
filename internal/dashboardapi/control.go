@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -425,10 +426,10 @@ func (s *Server) GetDbStats(w http.ResponseWriter, r *http.Request) {
 // SELECT/SHOW/WITH, and no mutating keyword anywhere. On a public endpoint this
 // still needs real auth in production — documented as such.
 
-var mutatingKeywords = []string{
-	"insert", "update", "delete", "drop", "alter", "truncate",
-	"create", "grant", "revoke", "upsert", "comment on",
-}
+// Khop theo ranh gioi tu, khong phai chuoi con: "CREATE TABLE" bi chan, con
+// "created_at" - mot cot chi-doc binh thuong - van dung duoc. Truoc day dung
+// strings.Contains nen moi truy van loc theo thoi gian deu bi tu choi.
+var mutatingRe = regexp.MustCompile(`(?i)\b(insert|update|delete|drop|alter|truncate|create|grant|revoke|upsert|comment\s+on)\b`)
 
 const queryRowLimit = 200
 
@@ -463,11 +464,9 @@ func (s *Server) RunQuery(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "only a single statement is allowed", http.StatusBadRequest)
 		return
 	}
-	for _, kw := range mutatingKeywords {
-		if strings.Contains(lower, kw) {
-			http.Error(w, "read-only console: mutating statements are rejected", http.StatusBadRequest)
-			return
-		}
+	if mutatingRe.MatchString(q) {
+		http.Error(w, "read-only console: mutating statements are rejected", http.StatusBadRequest)
+		return
 	}
 
 	rows, err := s.DB.Pool.Query(r.Context(), q)

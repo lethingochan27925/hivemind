@@ -1,0 +1,1 @@
+{"available":true,"period_start":"2026-08-01","period_end":"2026-08-14","total_usd":0.0015228597,"by_service":[{"service":"Lambda","usd":0.0015162506},{"service":"CloudShell","usd":0.0000044001},{"service":"Simple Storage Service","usd":0.0000022054},{"service":"EC2 Container Registry (ECR)","usd":3.6e-9}],"refreshed_at":"2026-08-13T09:48:24Z","cache_minutes":360}

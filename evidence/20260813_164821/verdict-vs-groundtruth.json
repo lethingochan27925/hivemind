@@ -1,0 +1,1 @@
+{"columns":["verdict","is_fraud_label","n"],"row_count":3,"rows":[["escalate",false,202],["fraud",true,34],["legit",false,138]],"truncated":false}

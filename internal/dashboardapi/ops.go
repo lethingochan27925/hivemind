@@ -343,6 +343,29 @@ func (s *Server) MemoryJob(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, map[string]string{"status": "ok", "job": "decay"})
 
+	case "archive_all":
+		// Khoi dau lanh cho mot phien huan luyen: dua toan bo ky uc ra khoi
+		// vector index. archive_below khong lam duoc viec nay vi nguong bi chan
+		// o 2.0, ma ky uc duoc goi nho nhieu se dat dung tran do.
+		tag, err := s.DB.Pool.Exec(ctx, `UPDATE case_memory SET archived = true WHERE archived = false`)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("archive failed: %v", err), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, map[string]interface{}{"status": "ok", "job": "archive_all", "archived": tag.RowsAffected()})
+
+	case "unarchive_all":
+		// Nghich dao cua archive_all. Ton tai vi thi nghiem A/B tung archive
+		// toan bo ky uc cho pha lanh roi khong tra lai: fleet chay nhieu gio
+		// voi 15/115 ky uc va ty le escalate tang vot. Salience giu nguyen
+		// nen ban do quan trong khong bi mat qua mot chu ky archive/restore.
+		tag, err := s.DB.Pool.Exec(ctx, `UPDATE case_memory SET archived = false WHERE archived = true`)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("restore failed: %v", err), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, map[string]interface{}{"status": "ok", "job": "unarchive_all", "restored": tag.RowsAffected()})
+
 	case "archive_below":
 		if body.Threshold <= 0 || body.Threshold > 2 {
 			http.Error(w, "threshold must be 0-2", http.StatusBadRequest)
@@ -357,7 +380,7 @@ func (s *Server) MemoryJob(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]interface{}{"status": "ok", "job": "archive_below", "archived": tag.RowsAffected()})
 
 	default:
-		http.Error(w, "job must be decay or archive_below", http.StatusBadRequest)
+		http.Error(w, "job must be decay | archive_below | archive_all | unarchive_all", http.StatusBadRequest)
 	}
 }
 

@@ -1,27 +1,39 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import { Sun, Moon } from "lucide-react";
 
-/**
- * ThemeToggle - flips [data-theme] on <html> and persists the choice.
- * The no-FOUC bootstrap script in layout.tsx applies the stored theme before
- * first paint; this component only reflects and mutates it.
- */
-export function ThemeToggle() {
-  const [theme, setTheme] = useState<"light" | "dark">("light");
+type Theme = "light" | "dark";
 
-  useEffect(() => {
-    setTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
-  }, []);
+// The theme lives on <html data-theme>, written before first paint by the
+// no-FOUC script in layout.tsx. That attribute is the source of truth, so this
+// component observes it instead of keeping a second copy in React state — which
+// also means the icon stays correct if anything else flips the attribute.
+function subscribeTheme(onChange: () => void) {
+  const observer = new MutationObserver(onChange);
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-theme"],
+  });
+  return () => observer.disconnect();
+}
+
+function readTheme(): Theme {
+  return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+}
+
+/** ThemeToggle - flips [data-theme] on <html> and persists the choice. */
+export function ThemeToggle() {
+  const theme = useSyncExternalStore(subscribeTheme, readTheme, () => "light" as Theme);
 
   const flip = () => {
-    const next = theme === "dark" ? "light" : "dark";
+    const next: Theme = theme === "dark" ? "light" : "dark";
     document.documentElement.dataset.theme = next;
     try {
       localStorage.setItem("hm-theme", next);
-    } catch {}
-    setTheme(next);
+    } catch {
+      // Private mode: the theme still flips, it just will not be remembered.
+    }
   };
 
   return (

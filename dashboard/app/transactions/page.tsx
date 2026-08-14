@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, Transaction, AuditStep } from "@/lib/api";
+import { useQueryParam } from "@/lib/use-query-param";
 import { Panel } from "@/components/ui/panel";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -19,8 +20,13 @@ const FILTERS = ["", "low", "medium", "high"];
 
 export default function TransactionsPage() {
   const [txns, setTxns] = useState<Transaction[]>([]);
-  const [selected, setSelected] = useState<Transaction | null>(null);
+  // Deep-link tu global search: /transactions?id=<uuid>. Lua chon duoc SUY RA
+  // tu URL + danh sach, khong copy vao state bang effect: `undefined` = nguoi
+  // dung chua chon gi, `null` = ho da dong panel.
+  const idParam = useQueryParam("id");
+  const [pick, setPick] = useState<Transaction | null | undefined>(undefined);
   const [audit, setAudit] = useState<AuditStep[]>([]);
+  const [auditFor, setAuditFor] = useState("");
   const [filter, setFilter] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -53,31 +59,47 @@ export default function TransactionsPage() {
   // vong poll tiep theo (truoc day row van hien verdict cu vai giay).
   const applyLocalVerdict = (id: string, verdict?: string) => {
     setTxns((prev) => prev.map((t) => (t.id === id ? { ...t, verdict } : t)));
-    setSelected((prev) => (prev && prev.id === id ? { ...prev, verdict } : prev));
+    setPick((prev) => (prev && prev.id === id ? { ...prev, verdict } : prev));
     api
       .getTransactions(filter || undefined)
       .then((t) => setTxns(t ?? []))
       .catch(() => {});
   };
 
-  const select = (tx: Transaction) => {
-    setSelected(tx);
-    setAudit([]);
-    api
-      .getTransactionAudit(tx.id)
-      .then((a) => setAudit(a ?? []))
-      .catch(() => setAudit([]));
-  };
+  const selected =
+    pick !== undefined
+      ? pick
+      : idParam
+        ? (txns.find((t) => t.id === idParam || t.id.startsWith(idParam)) ?? null)
+        : null;
 
-  // Deep-link tu global search: /transactions?id=<uuid> tu chon dung row do.
+  const select = (tx: Transaction) => setPick(tx);
+
+  // Audit trail cua case dang chon. auditFor giu lai case nao da nap xong, nen
+  // khi doi case ta hien bang rong ngay ma khong can setState dong bo trong
+  // than effect.
   useEffect(() => {
-    if (selected || txns.length === 0) return;
-    const id = new URLSearchParams(window.location.search).get("id");
+    const id = selected?.id;
     if (!id) return;
-    const tx = txns.find((t) => t.id === id || t.id.startsWith(id));
-    if (tx) select(tx);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [txns]);
+    let alive = true;
+    api
+      .getTransactionAudit(id)
+      .then((a) => {
+        if (!alive) return;
+        setAudit(a ?? []);
+        setAuditFor(id);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setAudit([]);
+        setAuditFor(id);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [selected?.id]);
+
+  const auditSteps = selected && auditFor === selected.id ? audit : [];
 
   return (
     <div>
@@ -190,11 +212,11 @@ export default function TransactionsPage() {
               message="Select a transaction"
               hint="See the anatomy of a verdict: recalled memories with real vector similarity, model cost, and any crash/resume - all from the append-only audit log."
             />
-          ) : audit.length === 0 ? (
+          ) : auditSteps.length === 0 ? (
             <EmptyState message="No audit steps recorded" />
           ) : (
             <div className="max-h-[70vh] overflow-y-auto pr-1">
-              <DecisionTrace steps={audit} />
+              <DecisionTrace steps={auditSteps} />
             </div>
           )}
         </Panel>

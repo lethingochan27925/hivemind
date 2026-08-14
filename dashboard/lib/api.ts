@@ -197,6 +197,52 @@ export interface CloudCost {
   refreshed_at?: string;
   cache_minutes: number;
 }
+export interface TrainingSnapshot {
+  at: string;
+  memories_active: number;
+  memories_archived: number;
+  raw_cases_absorbed: number;
+  recall_events: number;
+  recall_hits_sum: number;
+  verdict_fraud: number;
+  verdict_legit: number;
+  verdict_escalate: number;
+  correct_verdicts: number;
+  graded_verdicts: number;
+  tokens_in: number;
+  tokens_out: number;
+  model_decisions: number;
+  fallback_verdicts: number;
+  pending: number;
+  investigating: number;
+}
+export interface TrainingLogEntry {
+  at: string;
+  action: string;
+  agent_id: string;
+  task_id: string;
+  reasoning?: string;
+  memory_hits?: number;
+  latency_ms?: number;
+  bedrock_model?: string;
+}
+export interface IngestResult {
+  status: string;
+  inserted: number;
+  fraud: number;
+  legit: number;
+  seed: number;
+  took_ms: number;
+  queued_now: number;
+}
+export interface TrainingRun {
+  id: string;
+  label: string;
+  config: unknown;
+  batches: unknown;
+  summary: unknown;
+  created_at: string;
+}
 export interface Policy {
   risk_low: number;
   risk_high: number;
@@ -350,7 +396,22 @@ export const api = {
       headers: controlHeaders(),
       body: JSON.stringify({ action, id }),
     }),
-  memoryJob: (job: "decay" | "archive_below", threshold?: number) =>
+  ingest: (count: number, fraudRate: number, seed = 0) =>
+    fetchJSON<IngestResult>("/control/ingest", {
+      method: "POST",
+      headers: controlHeaders(),
+      body: JSON.stringify({ count, fraud_rate: fraudRate, seed }),
+    }),
+  listTrainingRuns: () => fetchJSON<TrainingRun[]>("/control/training/runs"),
+  saveTrainingRun: (label: string, config: unknown, batches: unknown, summary: unknown) =>
+    fetchJSON<{ status: string; id: string }>("/control/training/runs", {
+      method: "POST",
+      headers: controlHeaders(),
+      body: JSON.stringify({ label, config, batches, summary }),
+    }),
+  trainingMetrics: () => fetchJSON<TrainingSnapshot>("/control/training/metrics"),
+  trainingLog: (limit = 60) => fetchJSON<TrainingLogEntry[]>(`/control/training/log?limit=${limit}`),
+  memoryJob: (job: "decay" | "archive_below" | "archive_all" | "unarchive_all", threshold?: number) =>
     fetchJSON<{ status: string; archived?: number }>("/control/memory/job", {
       method: "POST",
       headers: controlHeaders(),

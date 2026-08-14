@@ -1,9 +1,11 @@
 name: Smoke Test
 
-# Post-deploy health gate: after staging is applied, hit the live dashboard-api
-# control plane and assert it is healthy AND that the read-only SQL guard still
-# rejects mutating statements. Wires test/integration/api_smoke.sh into CD, so a
-# broken control plane turns the pipeline red before canary shifts any traffic.
+# Third link of the delivery chain. Hits the live control plane and asserts it is
+# healthy and that the read-only SQL guard still rejects mutating statements.
+#
+# Deploy Canary triggers on THIS workflow, not on Deploy Staging. That ordering
+# is the whole point: previously both fired on Deploy Staging and ran in
+# parallel, so traffic could shift before the smoke test had said anything.
 
 on:
   workflow_run:
@@ -13,17 +15,26 @@ on:
 
 env:
   AWS_REGION: ap-southeast-1
+  TF_VERSION: '1.14.8'
 
 permissions:
   id-token: write
   contents: read
 
+concurrency:
+  group: smoke-test
+  cancel-in-progress: false
+
 jobs:
   smoke:
+    name: Control-plane smoke test
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
@@ -33,14 +44,17 @@ jobs:
 
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: '1.9.0'
+          terraform_version: ${{ env.TF_VERSION }}
 
-      - name: Resolve dashboard-api URL
+      - name: Resolve the dashboard-api URL
         id: tf
         working-directory: terraform
         run: |
-          terraform init
+          terraform init -input=false
           echo "api_url=$(terraform output -raw dashboard_api_url)" >> "$GITHUB_OUTPUT"
 
-      - name: Control-plane smoke test
+      # A Lambda that panics at init answers 502 to everything, including
+      # /health — so this catches a broken control plane before any traffic
+      # shifts to it.
+      - name: Run smoke suite
         run: bash test/integration/api_smoke.sh "${{ steps.tf.outputs.api_url }}"

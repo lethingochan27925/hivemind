@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useCallback, useContext, useSyncExternalStore, ReactNode } from "react";
 
 /**
  * i18n - English <-> Vietnamese for the control platform.
@@ -19,12 +19,72 @@ import { createContext, useCallback, useContext, useEffect, useState, ReactNode 
 export type Lang = "en" | "vi";
 
 const VI: Record<string, string> = {
+  // --- System status banner (Mission Control) ---
+  "Cannot reach the control plane": "Không gọi được control plane",
+  "Nothing is running yet": "Chưa có gì đang chạy",
+  "The fleet is paused and the queue is empty. Start it to watch agents claim cases, recall similar past fraud from memory, and decide.":
+    "Fleet đang tạm dừng và hàng đợi trống. Khởi động để xem agent nhận case, gợi nhớ các vụ gian lận tương tự từ bộ nhớ, và ra phán quyết.",
+  "Start the fleet and feed 100 cases": "Khởi động fleet và nạp 100 case",
+  "Fleet is paused": "Fleet đang tạm dừng",
+  "The queue is empty and schedules are disabled. Start it again to process more cases.":
+    "Hàng đợi trống và lịch chạy đang tắt. Khởi động lại để xử lý thêm case.",
+  "{n} cases are waiting but the fleet is paused":
+    "{n} case đang chờ nhưng fleet đang tạm dừng",
+  "Schedules are disabled, so nothing will pick these up until the fleet is started.":
+    "Lịch chạy đang tắt, sẽ không có gì xử lý số case này cho đến khi fleet được khởi động.",
+  "Fleet running · queue drained": "Fleet đang chạy · hàng đợi đã rút cạn",
+  "Every queued case has been decided. Feed more to keep the fleet working.":
+    "Mọi case trong hàng đợi đã có phán quyết. Nạp thêm để fleet tiếp tục làm việc.",
+  "Feed 100 more": "Nạp thêm 100 case",
+  "Fleet running": "Fleet đang chạy",
+  "{a} under investigation · {p} waiting in the queue":
+    "{a} đang được điều tra · {p} đang chờ trong hàng đợi",
+  "Fleet started · {n} cases queued · {w} workers invoked":
+    "Đã khởi động fleet · {n} case vào hàng đợi · {w} worker được gọi",
+  "Fleet started · {w} workers invoked": "Đã khởi động fleet · {w} worker được gọi",
+  "{n} cases queued": "{n} case đã vào hàng đợi",
+  Retry: "Thử lại",
+  Failed: "Thất bại",
+  "last data": "dữ liệu cuối",
+  connecting: "đang kết nối",
+
+  // --- Memory health ---
+  "Memory health": "Sức khỏe bộ nhớ",
+  "{p}% of learned knowledge is archived and unreachable":
+    "{p}% kiến thức đã học đang bị lưu kho và không truy cập được",
+  "{a} memories answer recall queries · {z} sit archived outside the vector index":
+    "{a} ký ức đang phục vụ truy vấn gợi nhớ · {z} nằm trong kho, ngoài vector index",
+  "Restore all archived": "Khôi phục toàn bộ kho",
+  "Restored {n} memories to the vector index": "Đã khôi phục {n} ký ức về vector index",
+
   // --- Navigation / chrome ---
   Operate: "Vận hành",
   Observe: "Quan sát",
   Platform: "Nền tảng",
   "Mission Control": "Trung tâm điều hành",
   "Review Queue": "Hàng đợi duyệt",
+  "Training Lab": "Phòng huấn luyện",
+  "Feed data batch by batch and watch the fleet's memory form — measured, not asserted":
+    "Nạp dữ liệu theo từng mẻ và xem bộ nhớ của fleet hình thành — đo được, không phải tuyên bố",
+  "Training run": "Phiên huấn luyện",
+  "each batch: feed cases → drain the queue → measure":
+    "mỗi mẻ: nạp case → chờ xử lý hết → đo",
+  "Start training run": "Bắt đầu huấn luyện",
+  Stop: "Dừng",
+  "Export run": "Xuất phiên chạy",
+  "Memory formation": "Hình thành bộ nhớ",
+  "active memories and raw cases absorbed, per batch":
+    "số ký ức hoạt động và số case gốc đã hấp thụ, theo từng mẻ",
+  "Decision mix": "Cơ cấu quyết định",
+  "auto-resolved vs escalated, per batch": "tự quyết so với chuyển người, theo từng mẻ",
+  "Batch results": "Kết quả từng mẻ",
+  "every row is a measured step of the run": "mỗi dòng là một bước đo được của phiên chạy",
+  "Live agent activity": "Hoạt động agent trực tiếp",
+  "the append-only audit trail, newest first": "audit trail chỉ-ghi-thêm, mới nhất trước",
+  "Cost per batch": "Chi phí mỗi mẻ",
+  "No run yet": "Chưa có phiên chạy nào",
+  "No batches recorded": "Chưa ghi nhận mẻ nào",
+  "No recent activity": "Chưa có hoạt động gần đây",
   Transactions: "Giao dịch",
   "Fleet & Memory": "Fleet & Bộ nhớ",
   Cost: "Chi phí",
@@ -200,22 +260,35 @@ const I18nContext = createContext<I18nValue>({
   t: (s) => s,
 });
 
-export function I18nProvider({ children }: { children: ReactNode }) {
-  const [lang, setLangState] = useState<Lang>("en");
+// localStorage la mot external store: doc no bang useSyncExternalStore thay vi
+// setState trong effect. Tranh cascading render, va tranh lech hydration vi
+// server luon tra ve snapshot "en".
+function subscribeLang(onChange: () => void) {
+  window.addEventListener("storage", onChange);
+  window.addEventListener("hm-lang-change", onChange);
+  return () => {
+    window.removeEventListener("storage", onChange);
+    window.removeEventListener("hm-lang-change", onChange);
+  };
+}
 
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("hm-lang");
-      if (saved === "vi" || saved === "en") setLangState(saved);
-    } catch {}
-  }, []);
+function readLang(): Lang {
+  try {
+    const saved = localStorage.getItem("hm-lang");
+    if (saved === "vi" || saved === "en") return saved;
+  } catch {}
+  return "en";
+}
+
+export function I18nProvider({ children }: { children: ReactNode }) {
+  const lang = useSyncExternalStore(subscribeLang, readLang, () => "en" as Lang);
 
   const setLang = useCallback((l: Lang) => {
-    setLangState(l);
     try {
       localStorage.setItem("hm-lang", l);
     } catch {}
     document.documentElement.lang = l;
+    window.dispatchEvent(new Event("hm-lang-change"));
   }, []);
 
   const t = useCallback((s: string) => (lang === "vi" ? VI[s] ?? s : s), [lang]);

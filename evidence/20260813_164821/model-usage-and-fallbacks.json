@@ -1,0 +1,1 @@
+{"columns":["bedrock_model","n","avg_ms","tokens"],"row_count":2,"rows":[["anthropic.claude-3-haiku-20240307-v1:0",3224,4726.1557071960297767,2294725],[null,194,3054.6752577319587629,null]],"truncated":false}

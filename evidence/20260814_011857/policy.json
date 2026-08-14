@@ -1,0 +1,1 @@
+{"risk_low":0.001,"risk_high":0.999,"dispatch_batch":20,"fallback_action":"escalate","daily_budget_usd":5,"auto_pause_on_budget":false,"updated_by":"","updated_at":"2026-08-13T05:21:25Z"}

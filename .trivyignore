@@ -1,0 +1,6 @@
+# Trivy IaC findings waived for this project, one per line, with a reason.
+# Only CRITICAL findings fail the build; HIGH and below are reported to the
+# GitHub Security tab and reviewed there.
+#
+# Example:
+# AVD-AWS-0088  # bucket SSE-KMS not required: state bucket uses SSE-S3 by design

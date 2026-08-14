@@ -1,0 +1,1 @@
+{"columns":["action","n"],"row_count":10,"rows":[["task_requeued",7769],["task_resumed",3901],["memory_recall",3810],["mcp_query",3789],["bedrock_reasoning",3778],["verdict_escalate",2276],["verdict_fraud",747],["verdict_legit",697],["human_reviewed",205],["task_failed",2]],"truncated":false}

@@ -1,5 +1,13 @@
 name: Deploy Staging
 
+# Second link of the delivery chain:
+#   Build and Push Images -> Deploy Staging -> Smoke Test -> Deploy Canary
+#
+# Terraform is applied with the image tag of the commit that was actually built,
+# and the checkout is pinned to that same commit. Without the pin, a push landing
+# during the build would make this job apply a different tree than the one whose
+# images are in ECR.
+
 on:
   workflow_run:
     workflows: ["Build and Push Images"]
@@ -8,19 +16,62 @@ on:
 
 env:
   AWS_REGION: ap-southeast-1
+  TF_VERSION: '1.14.8'
+  GO_VERSION: '1.25'
 
 permissions:
   id-token: write
   contents: read
 
+# Never cancel a running apply: a half-applied Terraform state is worse than a
+# queued deploy.
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
 jobs:
-  deploy-staging:
+  preflight:
+    name: Required secrets present
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Reports which secret is missing instead of letting Terraform fail 40
+      # lines deep with "no value for required variable". Only lengths are
+      # printed, never values.
+      - name: Assert every required secret is configured
+        env:
+          AWS_GITHUB_ACTIONS_ROLE_ARN: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          COCKROACHDB_MCP_ENDPOINT: ${{ secrets.COCKROACHDB_MCP_ENDPOINT }}
+          COCKROACHDB_MCP_API_KEY: ${{ secrets.COCKROACHDB_MCP_API_KEY }}
+          COCKROACHDB_CLUSTER_ID: ${{ secrets.COCKROACHDB_CLUSTER_ID }}
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+        run: |
+          missing=0
+          for name in AWS_GITHUB_ACTIONS_ROLE_ARN DATABASE_URL COCKROACHDB_MCP_ENDPOINT \
+                      COCKROACHDB_MCP_API_KEY COCKROACHDB_CLUSTER_ID ALERT_EMAIL; do
+            value="${!name}"
+            if [ -z "$value" ]; then
+              echo "::error::repository secret $name is not configured"
+              missing=1
+            else
+              echo "  $name: set (${#value} characters)"
+            fi
+          done
+          exit $missing
+
+  deploy-staging:
+    name: Terraform apply
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     outputs:
       image_tag: ${{ steps.set-tag.outputs.image_tag }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
@@ -28,19 +79,21 @@ jobs:
           role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Set image tag from triggering commit
+      - name: Set image tag from the built commit
         id: set-tag
-        run: echo "image_tag=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: echo "image_tag=$HEAD_SHA" >> "$GITHUB_OUTPUT"
 
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: '1.9.0'
+          terraform_version: ${{ env.TF_VERSION }}
 
-      - name: Terraform Init
+      - name: Terraform init
         working-directory: terraform
-        run: terraform init
+        run: terraform init -input=false
 
-      - name: Terraform Apply (update image_tag var)
+      - name: Terraform apply
         working-directory: terraform
         env:
           TF_VAR_cockroachdb_connection_string: ${{ secrets.DATABASE_URL }}
@@ -49,19 +102,24 @@ jobs:
           TF_VAR_cockroachdb_cluster_id: ${{ secrets.COCKROACHDB_CLUSTER_ID }}
           TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
           TF_VAR_image_tag: ${{ steps.set-tag.outputs.image_tag }}
-        run: terraform apply -auto-approve
+        run: terraform apply -auto-approve -input=false
 
   integration-test:
+    name: Integration tests against CockroachDB
     needs: deploy-staging
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
 
-      - name: Run integration tests against real CockroachDB
+      - name: Run integration tests
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: go test ./internal/memory/... -tags=integration -v
+        run: go test ./internal/memory/... -tags=integration -count=1 -v

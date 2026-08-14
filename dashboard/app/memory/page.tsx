@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { PASTEL } from "@/lib/palette";
 import { MemoryAdmin } from "@/components/control/memory-admin";
+import { MemoryHealth } from "@/components/control/memory-health";
 import { BarList } from "@/components/charts/bar-list";
 import { Database, Archive, Gauge, Target } from "lucide-react";
 
@@ -16,9 +17,10 @@ const prettyPattern = (s: string) =>
   s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
 export default function MemoryPage() {
-  const { data, error, lastUpdated } = useLive(api.getMemory, 8000);
+  const { data, error, loading, lastUpdated } = useLive(api.getMemory, 8000);
   const stats = data?.stats;
   const impact = data?.impact;
+  const pending = loading && !data;
 
   const withHit = impact?.avg_latency_with_hit_ms;
   const noHit = impact?.avg_latency_no_hit_ms;
@@ -37,13 +39,16 @@ export default function MemoryPage() {
       />
 
       <div className="p-6 space-y-5 hm-enter">
-        <MemoryAdmin />
+        {/* Reachable vs archived knowledge, with one-click restore. Sits above
+            everything: a half-blind fleet is the first thing to know about. */}
+        <MemoryHealth stats={stats} />
 
         <div className="grid grid-cols-2 md:grid-cols-4 border border-border rounded-md divide-y md:divide-y-0 md:divide-x divide-border bg-bg-panel/40">
           <Stat
             label="Active cases"
             value={stats?.active_cases ?? "-"}
             color="blue"
+            loading={pending}
             icon={<Database size={12} />}
             hint="consolidated, searchable"
           />
@@ -51,6 +56,7 @@ export default function MemoryPage() {
             label="Archived"
             value={stats?.archived_cases ?? "-"}
             color="default"
+            loading={pending}
             icon={<Archive size={12} />}
             hint="decayed below threshold"
           />
@@ -58,6 +64,7 @@ export default function MemoryPage() {
             label="Avg salience"
             value={stats?.avg_salience != null ? stats.avg_salience.toFixed(2) : "-"}
             color="purple"
+            loading={pending}
             icon={<Gauge size={12} />}
             hint="recall-weighted importance"
           />
@@ -66,10 +73,13 @@ export default function MemoryPage() {
             value={impact?.verdict_accuracy_pct != null ? impact.verdict_accuracy_pct : "-"}
             unit="%"
             color="green"
+            loading={pending}
             icon={<Target size={12} />}
             hint="vs ground-truth labels"
           />
         </div>
+
+        <MemoryAdmin />
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <Panel title="Learned patterns" subtitle="episodic cases by fraud signature">

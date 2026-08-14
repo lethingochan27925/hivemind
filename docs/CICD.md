@@ -1,74 +1,136 @@
-# CI/CD & DevOps
+# CI/CD
 
-HiveMind ships through a full GitHub Actions pipeline: **verify → build → stage → smoke → canary → promote/rollback**, plus continuous delivery for the dashboard and independent security scanning. Every AWS action uses **OIDC** — there are no long-lived AWS keys in GitHub.
+Eight workflows in `.github/workflows/`. Authentication to AWS is OIDC only —
+there is no static AWS key anywhere in the repository, and `pipeline_test.sh`
+fails the build if one appears.
 
-## The pipeline
+## The delivery chain
 
 ```mermaid
-flowchart TD
-    push["push / PR to main"] --> ci["CI<br/>build · test · vet · gofmt · docker build · tf validate"]
-    push --> sec["Security<br/>govulncheck · tfsec · gitleaks"]
+flowchart LR
+    push["push to main"] --> CI["CI<br/>hermetic gates"]
+    push --> BP["Build and Push Images<br/>7 images to ECR at commit SHA"]
+    BP -->|on success| DS["Deploy Staging<br/>terraform apply at image_tag"]
+    DS -->|on success| SM["Smoke Test<br/>control plane, 30 checks"]
+    SM -->|on success| CN["Deploy Canary<br/>10% then alarm then 100% or rollback"]
+    push --> SEC["Security<br/>govulncheck, Trivy, gitleaks"]
+    dash["push to dashboard/**"] --> DD["Deploy Dashboard<br/>S3 + CloudFront"]
 
-    subgraph release["Release chain (push to main)"]
-        bp["Build & Push Images<br/>7 Go images → ECR (OIDC)"]
-        bp --> stg["Deploy Staging<br/>terraform apply (new image_tag)<br/>+ integration tests vs real CockroachDB"]
-        stg --> smoke["Smoke Test<br/>api_smoke.sh vs live control plane<br/>(read-only guard must reject DELETE)"]
-        stg --> canary["Deploy Canary<br/>10% traffic → observe 5m → CloudWatch alarm?"]
-        canary -->|alarm OK| promote["Promote alias → 100%"]
-        canary -->|alarm firing| rollback["Rollback alias → previous version"]
-    end
-
-    ci --> bp
-    dash["dashboard/** changes"] --> dd["Deploy Dashboard<br/>next build → S3 sync → CloudFront invalidate"]
+    style CN fill:#fde68a,stroke:#d97706
+    style SM fill:#bbf7d0,stroke:#16a34a
 ```
+
+The ordering matters and used to be wrong. Smoke Test and Deploy Canary both
+triggered on *Deploy Staging*, which meant they ran **in parallel** — traffic
+could shift to a new version while the smoke test was still running, and a smoke
+failure stopped nothing. Deploy Canary now triggers on *Smoke Test*, so a broken
+control plane blocks the traffic shift.
+
+Each `workflow_run` consumer checks out `github.event.workflow_run.head_sha`, not
+whatever `main` points at when the job starts. Without that pin, a push landing
+during a five-minute image build would make Terraform apply a different tree than
+the one whose images are in ECR.
 
 ## Workflows
 
-| Workflow | Trigger | What it does |
-|----------|---------|--------------|
-| `ci.yml` | push / PR | `go build`, `go test ./...`, `go vet`, `gofmt -l`, Python syntax/import, **Docker build of all 7 images**, `terraform validate` + `fmt -check`. |
-| `security.yml` | push / PR / weekly | **govulncheck** (Go CVEs), **tfsec** (IaC misconfig), **gitleaks** (committed secrets). |
-| `terraform-infra.yml` | PR on `terraform/**` / dispatch | `terraform plan` commented on the PR; `apply` only via manual dispatch. |
-| `build-and-push.yml` | push to main | Builds & pushes the 7 service images to ECR, tagged with the commit SHA + `latest`, via OIDC. |
-| `deploy-staging.yml` | after Build & Push | `terraform apply` with the new `image_tag`, then **integration tests against the real CockroachDB** (`-tags=integration`). |
-| `smoke-test.yml` | after Deploy Staging | Runs `test/integration/api_smoke.sh` against the deployed control plane — fails the pipeline if any endpoint is unhealthy or the read-only guard lets a mutation through. |
-| `deploy-canary.yml` | after Deploy Staging | Shifts **10%** of `live`-alias traffic to the new version, waits 5 min, checks the per-service CloudWatch error alarm, then **promotes to 100% or auto-rolls-back**. Scheduled services promote directly. |
-| `deploy-dashboard.yml` | `dashboard/**` change / dispatch | Builds the Next.js static export with the live API URL, syncs to S3, invalidates CloudFront — CD for the public demo URL. |
+| Workflow | Trigger | Purpose |
+|---|---|---|
+| `ci.yml` | push, PR | Go build/vet/fmt/test, dashboard lint + build, Python service, 7 image builds, Terraform validate, actionlint, pipeline invariants |
+| `security.yml` | push, PR, weekly | `govulncheck`, Trivy IaC scan, `gitleaks`, secret hygiene assertions |
+| `build-and-push.yml` | push to main | Builds all seven images and pushes them to ECR tagged with the commit SHA |
+| `deploy-staging.yml` | after Build and Push | Secret preflight, `terraform apply` with that image tag, integration tests against CockroachDB |
+| `smoke-test.yml` | after Deploy Staging | Runs `test/integration/api_smoke.sh` against the live control plane |
+| `deploy-canary.yml` | after Smoke Test | Weighted alias canary with alarm-driven promote or rollback |
+| `deploy-dashboard.yml` | push to `dashboard/**` | Static export with the live API URL baked in, S3 sync, CloudFront invalidation |
+| `terraform-infra.yml` | PR touching `terraform/**`, manual | Plan commented on the PR; apply only on manual dispatch |
 
-## How the canary decides (auto-rollback)
+## The canary
 
-Lambda **weighted alias routing** is the mechanism — no external tool:
+```mermaid
+sequenceDiagram
+    participant W as Workflow
+    participant L as Lambda alias live
+    participant C as CloudWatch
 
-1. Publish a new version (staging `terraform apply` does this).
-2. Point `live` at the *old* version but route `AdditionalVersionWeights = { new = 0.10 }` → 10% of traffic hits the new code.
-3. Wait 5 minutes, then read the `<project>-<env>-<service>-errors` CloudWatch alarm.
-4. **Alarm OK →** move `live` fully to the new version, clear the weights.
-   **Alarm firing →** move `live` back to the old version and **fail the job** (visible red).
+    W->>L: read live version (old) and newest published (new)
+    alt new equals old
+        W-->>W: nothing to shift, exit clean
+    else
+        W->>L: alias to old, 10% weighted to new
+        W->>W: wait 300s
+        W->>C: describe-alarms service-errors
+        alt alarm OK or INSUFFICIENT_DATA
+            W->>L: alias to new at 100%
+        else ALARM or alarm missing
+            W->>L: alias back to old at 100%
+            W-->>W: fail the job
+        end
+    end
+```
 
-This makes "auto rollback" a real, observable behaviour, not a slide.
+Three details are deliberate:
 
-## Security model
+- **`$LATEST` is filtered out** before picking the newest version.
+  `to_number("$LATEST")` returns null and `max_by` then errors — an intermittent
+  failure that looked random.
+- **A missing alarm fails.** Treating "the alarm does not exist" as healthy would
+  let a canary promote with no supervision at all.
+- **`INSUFFICIENT_DATA` promotes.** For an error-count alarm on a low-traffic
+  function that is the normal resting state: it means no error datapoints were
+  published, not that the check was inconclusive.
 
-- **OIDC, no static keys.** GitHub Actions assumes `…-github-actions` via `sts:AssumeRoleWithWebIdentity`, trust-scoped to `repo:lethingochan27925/hivemind:*`.
-- **Least-privilege deploy role.** ECR push/pull, Lambda code/alias/version on `<project>-<env>-*` only, CloudWatch alarm read, S3 for the dashboard bucket + Terraform state, CloudFront invalidation. No blanket admin.
-- **Secrets in GitHub Secrets → Terraform vars → SSM**, never in the repo. `gitleaks` guards against accidental commits; `.gitignore` blocks `*.tfstate`, `*.tfvars`, `.env*`, and the raw PaySim CSV.
+## Secrets
 
-## What each environment secret is
+Six repository secrets. `deploy-staging.yml` preflights all of them and names the
+missing one instead of letting Terraform fail deep in a plan; only the character
+count is ever printed.
 
 | Secret | Used by |
-|--------|---------|
-| `AWS_GITHUB_ACTIONS_ROLE_ARN` | every AWS-touching job (OIDC role) |
-| `DATABASE_URL` | staging integration tests + `terraform apply` |
-| `COCKROACHDB_MCP_ENDPOINT` / `_API_KEY` / `_CLUSTER_ID` | `terraform apply` (wired into SSM) |
-| `ALERT_EMAIL` | monitoring SNS subscription |
+|---|---|
+| `AWS_GITHUB_ACTIONS_ROLE_ARN` | every workflow that touches AWS |
+| `DATABASE_URL` | Terraform, integration tests |
+| `COCKROACHDB_MCP_ENDPOINT` | Terraform |
+| `COCKROACHDB_MCP_API_KEY` | Terraform |
+| `COCKROACHDB_CLUSTER_ID` | Terraform |
+| `ALERT_EMAIL` | Terraform (CloudWatch alarm subscription) |
 
-## Local parity
+Guarantees enforced by tests rather than by convention:
 
-Everything the pipeline does can be run locally, which is how it was developed:
+- no workflow echoes a secret, and none is interpolated into a `github-script`
+  body — `${{ }}` there is substituted before the JavaScript is parsed, so an
+  interpolated value executes as code; the Terraform plan comment reads from
+  `env` instead;
+- no `pull_request_target`, and `terraform-infra.yml` skips fork pull requests,
+  which cannot mint an OIDC token anyway;
+- every referenced secret is documented here, and every documented secret is
+  actually referenced — an unused secret is a credential nobody rotates.
+
+## Concurrency and bounds
+
+Every job declares `timeout-minutes`. Every workflow declares `permissions`
+explicitly rather than inheriting the repository default.
+
+Deploy workflows use `cancel-in-progress: false`: a cancelled `terraform apply`
+leaves partially-applied state, and a cancelled `s3 sync --delete` leaves a site
+with assets deleted but not replaced. CI uses `cancel-in-progress: true`, because
+superseding a read-only check costs nothing.
+
+## Running the gates locally
 
 ```bash
-go test ./...                                   # same as CI
-scripts/build-images.sh                         # same images CI pushes
-./scripts/init.sh                               # terraform apply + publish + alias
-bash test/integration/api_smoke.sh "$(terraform -chdir=terraform output -raw dashboard_api_url)"
+make ci-local     # everything CI runs, on your machine
+make cicd         # just the 107 pipeline invariants
+make actionlint   # just the workflow linter
+make runs         # recent GitHub Actions results
+make why          # logs of the most recent failure
 ```
+
+## Known failure modes and where they surface
+
+| Symptom | Cause | Caught by |
+|---|---|---|
+| Deploy dies in ~15s on `terraform init` | CLI older than the backend syntax | CICD-02, CICD-04 |
+| Every control-plane request returns 502 | duplicate route panics at Lambda init | `go test ./cmd/...`, smoke gate |
+| Dashboard renders but every panel says "Failed to fetch" | API URL not baked into the bundle | deploy-dashboard verification step |
+| `update-function-code` rejects the image | buildx wrote an OCI index | CICD-29 |
+| Canary fails intermittently with a jmespath error | `$LATEST` in `to_number` | CICD-33 |

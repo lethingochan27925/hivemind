@@ -25,6 +25,10 @@ const toneBar: Record<Tone, string> = {
 /**
  * Stat - a single KPI cell. A left accent bar encodes the metric's state colour;
  * the value is set large in tabular monospace so a row of stats aligns to the digit.
+ *
+ * `loading` matters more than it looks: without it a KPI renders a hard `0` while
+ * the first request is still in flight, so a healthy but idle system and a system
+ * that cannot reach its API look identical — five confident zeroes either way.
  */
 export function Stat({
   label,
@@ -33,6 +37,7 @@ export function Stat({
   color = "default",
   hint,
   icon,
+  loading = false,
 }: {
   label: string;
   value: string | number;
@@ -40,6 +45,7 @@ export function Stat({
   color?: Tone;
   hint?: string;
   icon?: ReactNode;
+  loading?: boolean;
 }) {
   return (
     <div className="relative flex flex-col gap-2 px-5 py-5">
@@ -48,12 +54,18 @@ export function Stat({
         {icon}
         <span className="uppercase tracking-wide">{label}</span>
       </div>
-      <div className="flex items-baseline gap-1.5">
-        <span className={`tnum text-[40px] leading-none font-bold ${toneText[color]}`}>
-          {value}
-        </span>
-        {unit && <span className="text-base text-text-tertiary font-medium">{unit}</span>}
-      </div>
+      {loading ? (
+        <div className="h-[40px] flex items-center">
+          <div className="w-16 h-7 rounded hm-skeleton" />
+        </div>
+      ) : (
+        <div className="flex items-baseline gap-1.5">
+          <span className={`tnum text-[40px] leading-none font-bold ${toneText[color]}`}>
+            {value}
+          </span>
+          {unit && <span className="text-base text-text-tertiary font-medium">{unit}</span>}
+        </div>
+      )}
       {hint && <span className="text-[12px] text-text-tertiary">{hint}</span>}
     </div>
   );

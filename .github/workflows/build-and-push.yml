@@ -1,5 +1,9 @@
 name: Build and Push Images
 
+# First link of the delivery chain. Every service is built once and pushed under
+# the commit SHA; Terraform then deploys that exact tag. `latest` is published
+# too, but only as a convenience for manual pulls — nothing deploys from it.
+
 on:
   push:
     branches: [main]
@@ -12,10 +16,19 @@ permissions:
   id-token: write
   contents: read
 
+concurrency:
+  group: build-and-push-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build-push:
+    name: Build ${{ matrix.service }}
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     strategy:
+      fail-fast: false
+      # Kept identical to the docker matrix in ci.yml; pipeline_test.sh asserts
+      # they do not drift apart.
       matrix:
         include:
           - service: agent-worker
@@ -44,21 +57,29 @@ jobs:
         id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and push ${{ matrix.service }}
+      # --provenance=false --sbom=false is mandatory. With buildx defaults the
+      # push produces an OCI image index, and Lambda's update-function-code
+      # rejects it with "image manifest, config or layer media type ... not
+      # supported".
+      - name: Build and push
         env:
           ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
+          SERVICE: ${{ matrix.service }}
+          CMD_PATH: ${{ matrix.cmd_path }}
         run: |
-          REPO="${ECR_REGISTRY}/hivemind/dev/${{ matrix.service }}"
+          REPO="${ECR_REGISTRY}/hivemind/dev/${SERVICE}"
           docker build --provenance=false --sbom=false -f Dockerfile.lambda-go \
-            --build-arg SERVICE_PATH=${{ matrix.cmd_path }} \
+            --build-arg SERVICE_PATH="${CMD_PATH}" \
             -t "${REPO}:${IMAGE_TAG}" \
             -t "${REPO}:latest" .
           docker push "${REPO}:${IMAGE_TAG}"
           docker push "${REPO}:latest"
 
   build-push-scoring-python:
+    name: Build scoring-python
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -72,7 +93,7 @@ jobs:
         id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and push scoring-python
+      - name: Build and push
         env:
           ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}

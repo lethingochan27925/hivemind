@@ -13,10 +13,13 @@ This folder is the **reference documentation** for HiveMind. The root [`README.m
 | 2 | [Agentic Memory](AGENTIC_MEMORY.md) | How is CockroachDB used as a *production* memory layer — episodic (vector), working, audit — not a toy query? |
 | 3 | [Data Model](DATA_MODEL.md) | The real schema: 4 tables, every index and why it exists, the ER diagram. |
 | 4 | [Agent Reasoning](AGENT_REASONING.md) | How does the agent decide fraud/legit/escalate, and why does a *small* LLM get it right? |
-| 5 | [API Reference](API.md) | Every dashboard-api endpoint — observability reads and the control plane — with request/response shapes and `curl` examples. |
-| 6 | [Deployment Runbook](DEPLOYMENT.md) | Reproduce the whole system from zero: prerequisites, `scripts/init.sh`, Bedrock access, dashboard deploy. |
-| 7 | [Security & Hardening](SECURITY.md) | IAM least-privilege, secrets in SSM, prompt-injection defence, read-only DB console, control-token gating. |
+| 5 | [Control Plane](CONTROL_PLANE.md) | What can be changed from the console, and what stops a mistake becoming an incident. |
+| 6 | [CI/CD & DevOps](CICD.md) | The 8-workflow pipeline: verify → build → stage → smoke → canary → promote/rollback. |
+| 7 | [API Reference](API.md) | Every dashboard-api endpoint — observability reads and the control plane — with request/response shapes and `curl` examples. |
+| 8 | [Deployment Runbook](DEPLOYMENT.md) | Reproduce the whole system from zero: prerequisites, `scripts/init.sh`, Bedrock access, dashboard deploy. |
+| 9 | [Security & Hardening](SECURITY.md) | IAM least-privilege, secrets in SSM, prompt-injection defence, read-only DB console, control-token gating. |
 | — | [Architecture Decision Records](adr/) | The *why* behind the load-bearing choices, one decision per file. |
+| [WORKFLOWS.md](WORKFLOWS.md) | Every routine as a single `make` target, grouped by situation |
 
 ## Quick facts
 
@@ -30,6 +33,7 @@ This folder is the **reference documentation** for HiveMind. The root [`README.m
 | **Compute** | AWS Lambda (container images, Go) + EventBridge schedules |
 | **Control plane** | Next.js static export on S3 + CloudFront, backed by `dashboard-api` Lambda |
 | **Measured** | 100% recall & precision on the labelled eval · ~46% auto-resolved without a human · ~$0.09 per investigation run |
+| **Console** | 10 pages, bilingual EN/VI, light/dark, drag-resizable panels, ⌘K command palette |
 
 ## For hackathon judges — the 60-second path
 

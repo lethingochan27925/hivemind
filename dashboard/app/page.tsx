@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { VerdictDonut } from "@/components/charts/verdict-donut";
 import { AreaTrend } from "@/components/charts/area-trend";
 import { LearningCurve } from "@/components/charts/learning-curve";
+import { SystemStatus } from "@/components/control/system-status";
 import { FleetControl } from "@/components/control/fleet-control";
 import { PolicyPanel } from "@/components/control/policy-panel";
 import { ShieldAlert, ShieldCheck, Flag, ClipboardList, Cpu } from "lucide-react";
@@ -17,8 +18,19 @@ import { PASTEL } from "@/lib/palette";
 
 const C = { red: PASTEL.red, green: PASTEL.green, yellow: PASTEL.yellow, blue: PASTEL.blue };
 
+/**
+ * Mission Control - the page a first-time visitor lands on.
+ *
+ * Order is deliberate and reads top to bottom as an answer to three questions:
+ *   1. what happened?      KPI row
+ *   2. is anything wrong?  status banner, with the one action that fixes it
+ *   3. how well did it go? impact and verdict split, then the learning curves
+ * Operating controls sit below that, and policy tuning - which almost no visitor
+ * touches - sits last and folded. Previously the tuning panel was third from the
+ * top, so the first thing anyone saw was an empty form.
+ */
 export default function OverviewPage() {
-  const { data, error, lastUpdated } = useLive(api.getOverview, 5000);
+  const { data, error, loading, lastUpdated } = useLive(api.getOverview, 5000);
 
   const verdicts = data?.verdicts_today ?? [];
   const count = (v: string) => verdicts.find((x) => x.verdict === v)?.count ?? 0;
@@ -29,6 +41,10 @@ export default function OverviewPage() {
   const handled = fraud + legit + escalate;
   const agents = new Set(data?.live_tasks?.map((t) => t.claimed_by) ?? []).size;
   const accuracy = data?.verdict_accuracy_pct;
+
+  // First load only. A refresh must never blank out numbers that are already on
+  // screen, or the whole page flickers every five seconds.
+  const pending = loading && !data;
 
   const trend =
     data?.memory_hits_trend?.map((p) => ({
@@ -43,6 +59,8 @@ export default function OverviewPage() {
       hits: Math.round(p.avg_memory_hits * 100) / 100,
     })) ?? [];
 
+  const chartSkeleton = (h: string) => <div className={`${h} hm-skeleton rounded`} />;
+
   return (
     <div>
       <PageHeader
@@ -53,27 +71,25 @@ export default function OverviewPage() {
       />
 
       <div className="p-6 space-y-5 hm-enter">
-        {/* KPI row */}
+        {/* What happened today */}
         <div className="grid grid-cols-2 md:grid-cols-5 border border-border rounded-md divide-y md:divide-y-0 md:divide-x divide-border bg-bg-panel/40">
-          <Stat label="Fraud blocked" value={fraud} color="red" icon={<ShieldAlert size={12} />} />
-          <Stat label="Escalated" value={escalate} color="yellow" icon={<Flag size={12} />} />
-          <Stat label="Cleared" value={legit} color="green" icon={<ShieldCheck size={12} />} />
+          <Stat label="Fraud blocked" value={fraud} color="red" loading={pending} icon={<ShieldAlert size={12} />} />
+          <Stat label="Escalated" value={escalate} color="yellow" loading={pending} icon={<Flag size={12} />} />
+          <Stat label="Cleared" value={legit} color="green" loading={pending} icon={<ShieldCheck size={12} />} />
           <Stat
             label="Pending review"
             value={data?.pending_reviews ?? "-"}
             color={(data?.pending_reviews ?? 0) > 0 ? "yellow" : "default"}
+            loading={pending}
             icon={<ClipboardList size={12} />}
           />
-          <Stat label="Active agents" value={agents} color="blue" icon={<Cpu size={12} />} />
+          <Stat label="Active agents" value={agents} color="blue" loading={pending} icon={<Cpu size={12} />} />
         </div>
 
-        {/* Fleet control - live operations */}
-        <FleetControl />
+        {/* Is anything wrong, and what do I press */}
+        <SystemStatus apiError={error} hasVerdicts={handled > 0} />
 
-        {/* Agent policy - tune how the fleet decides, live */}
-        <PolicyPanel />
-
-        {/* Impact + verdict split */}
+        {/* How well did it go */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           <Panel title="Real-world impact" className="lg:col-span-2">
             <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-6 items-center">
@@ -117,7 +133,9 @@ export default function OverviewPage() {
           </Panel>
 
           <Panel title="Verdict split">
-            {handled > 0 ? (
+            {pending ? (
+              chartSkeleton("h-[200px]")
+            ) : handled > 0 ? (
               <VerdictDonut
                 data={[
                   { name: "cleared", value: legit, color: C.green },
@@ -131,13 +149,18 @@ export default function OverviewPage() {
           </Panel>
         </div>
 
-        {/* Learning curve + memory recall trend */}
+        {/* Operate */}
+        <FleetControl />
+
+        {/* The payoff of agentic memory, over time */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <Panel
             title="Fleet learning curve"
             subtitle="as shared memory grows: recall rises, reasoning latency falls"
           >
-            {curve.length > 1 ? (
+            {pending ? (
+              chartSkeleton("h-[220px]")
+            ) : curve.length > 1 ? (
               <LearningCurve data={curve} />
             ) : (
               <div className="h-[220px]">
@@ -153,7 +176,9 @@ export default function OverviewPage() {
             title="Memory recall"
             subtitle="avg similar cases retrieved per investigation, last 24h"
           >
-            {trend.length > 0 ? (
+            {pending ? (
+              chartSkeleton("h-[150px]")
+            ) : trend.length > 0 ? (
               <AreaTrend data={trend} xKey="hour" yKey="hits" color={C.blue} unit=" hits" />
             ) : (
               <div className="h-[150px]">
@@ -166,7 +191,6 @@ export default function OverviewPage() {
           </Panel>
         </div>
 
-        {/* Live fleet */}
         <Panel
           title="Live fleet"
           subtitle="agents currently investigating"
@@ -178,7 +202,13 @@ export default function OverviewPage() {
             ) : null
           }
         >
-          {data?.live_tasks && data.live_tasks.length > 0 ? (
+          {pending ? (
+            <div className="space-y-2">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="h-6 hm-skeleton" />
+              ))}
+            </div>
+          ) : data?.live_tasks && data.live_tasks.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="w-full text-[14px]">
                 <thead>
@@ -205,6 +235,9 @@ export default function OverviewPage() {
             <EmptyState message="No agents currently investigating" hint="The queue is drained - start a stream to see the fleet claim tasks concurrently." />
           )}
         </Panel>
+
+        {/* Advanced: tuning the thresholds the fleet decides by */}
+        <PolicyPanel />
       </div>
     </div>
   );

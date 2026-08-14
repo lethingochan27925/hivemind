@@ -39,9 +39,27 @@ export function PageHeader({
       <div className="flex items-center gap-3 shrink-0">
         {actions}
         {error ? (
-          <span className="flex items-center gap-1.5 text-[13px] font-medium text-red">
+          // Keep the age of the last good response visible. "Disconnected" on its
+          // own gave no sense of whether the data on screen was ten seconds or
+          // ten minutes stale, and offered nothing to do about it.
+          <span className="flex items-center gap-2 text-[13px] font-medium text-red">
             <WifiOff size={14} />
-            {t("Disconnected")}
+            <span>
+              {t("Disconnected")}{" "}
+              {lastUpdated && (
+                <span className="font-normal text-text-tertiary">
+                  {t("last data")} {secs}
+                  {t("s ago")}
+                </span>
+              )}
+            </span>
+            <button
+              onClick={() => window.location.reload()}
+              className="flex items-center gap-1 px-2 py-1 rounded border border-red/30 bg-red/10 hover:bg-red/20 transition-colors"
+            >
+              <RefreshCw size={12} />
+              {t("Retry")}
+            </button>
           </span>
         ) : lastUpdated ? (
           <span className="flex items-center gap-1.5 text-[13px] text-text-tertiary">
@@ -50,7 +68,12 @@ export function PageHeader({
             {secs}
             {t("s ago")}
           </span>
-        ) : null}
+        ) : (
+          <span className="flex items-center gap-1.5 text-[13px] text-text-tertiary">
+            <span className="w-2 h-2 rounded-full bg-border-strong" />
+            {t("connecting")}
+          </span>
+        )}
       </div>
     </div>
   );

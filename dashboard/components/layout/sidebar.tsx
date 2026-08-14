@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { usePathname } from "next/navigation";
 import { useT } from "@/lib/i18n";
 import {
@@ -14,6 +14,7 @@ import {
   Database,
   Network,
   GitBranch,
+  GraduationCap,
 } from "lucide-react";
 
 // Platform-style grouped navigation: what you DO, what you WATCH, what you RUN ON.
@@ -23,6 +24,7 @@ const sections = [
     items: [
       { href: "/", label: "Mission Control", icon: LayoutGrid },
       { href: "/reviews", label: "Review Queue", icon: ClipboardCheck },
+      { href: "/training", label: "Training Lab", icon: GraduationCap },
     ],
   },
   {
@@ -44,46 +46,61 @@ const sections = [
   },
 ];
 
+// Be rong nav luu trong localStorage - doc bang useSyncExternalStore (external
+// store), khong phai setState trong effect.
+const DEFAULT_W = 240;
+
+function subscribeWidth(onChange: () => void) {
+  window.addEventListener("hm-sidebar-resize", onChange);
+  return () => window.removeEventListener("hm-sidebar-resize", onChange);
+}
+
+function readWidth(): number {
+  try {
+    const saved = Number(localStorage.getItem("hm-sidebar-w"));
+    if (saved >= 180 && saved <= 420) return saved;
+  } catch {}
+  return DEFAULT_W;
+}
+
+function writeWidth(w: number) {
+  try {
+    localStorage.setItem("hm-sidebar-w", String(w));
+  } catch {}
+  window.dispatchEvent(new Event("hm-sidebar-resize"));
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const t = useT();
 
-  // Bề rộng nav kéo được, nhớ qua reload.
-  const [sidebarWidth, setSidebarWidth] = useState(240);
-  const [dragging, setDragging] = useState(false);
-  const start = useRef({ x: 0, w: 240 });
+  const stored = useSyncExternalStore(subscribeWidth, readWidth, () => DEFAULT_W);
+  const [dragWidth, setDragWidth] = useState<number | null>(null);
+  const sidebarWidth = dragWidth ?? stored;
 
-  useEffect(() => {
-    try {
-      const saved = Number(localStorage.getItem("hm-sidebar-w"));
-      if (saved >= 180 && saved <= 420) setSidebarWidth(saved);
-    } catch {}
-  }, []);
-
-  const onMove = useCallback((e: PointerEvent) => {
-    const next = Math.max(180, Math.min(420, start.current.w + (e.clientX - start.current.x)));
-    setSidebarWidth(next);
-  }, []);
-
-  const onUp = useCallback(() => {
-    setDragging(false);
-    document.removeEventListener("pointermove", onMove);
-    document.removeEventListener("pointerup", onUp);
-    setSidebarWidth((w) => {
-      try {
-        localStorage.setItem("hm-sidebar-w", String(w));
-      } catch {}
-      return w;
-    });
-  }, [onMove]);
-
+  // Handler duoc tao trong chinh luc keo: khong con phu thuoc vong giua onMove
+  // va onUp, va tu don dep khi tha chuot.
   const onDown = (e: React.PointerEvent) => {
     e.preventDefault();
-    start.current = { x: e.clientX, w: sidebarWidth };
-    setDragging(true);
-    document.addEventListener("pointermove", onMove);
-    document.addEventListener("pointerup", onUp);
+    const startX = e.clientX;
+    const startW = sidebarWidth;
+    let latest = startW;
+
+    const move = (ev: PointerEvent) => {
+      latest = Math.max(180, Math.min(420, startW + (ev.clientX - startX)));
+      setDragWidth(latest);
+    };
+    const up = () => {
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", up);
+      writeWidth(latest);
+      setDragWidth(null);
+    };
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", up);
   };
+
+  const dragging = dragWidth !== null;
 
   return (
     <aside
@@ -93,7 +110,7 @@ export function Sidebar() {
       {/* Kéo cạnh phải để đổi bề rộng */}
       <div
         onPointerDown={onDown}
-        onDoubleClick={() => setSidebarWidth(240)}
+        onDoubleClick={() => writeWidth(DEFAULT_W)}
         title={t("Drag to resize · double-click to reset")}
         className={`absolute top-0 right-0 w-1.5 h-full cursor-ew-resize touch-none transition-colors ${
           dragging ? "bg-blue/60" : "hover:bg-blue/30"

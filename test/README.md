@@ -14,7 +14,9 @@ test/
 │   ├── TC-DASHBOARD.md      the 8 dashboard pages
 │   ├── TC-SCORING.md        risk routing thresholds + auto-decision
 │   ├── TC-DATA-INTEGRITY.md schema constraints as a safety net
-│   └── TC-CICD.md           CI/CD pipeline & DevOps invariants
+│   ├── TC-CICD.md           CI/CD pipeline & DevOps invariants
+│   ├── TC-CONTROL-OPS.md    policy · memory ops · task control · bulk · budget · rollback · regions
+│   └── TC-UX.md             search · i18n · theme · drag-resize · optimistic updates
 └── integration/
     ├── reasoning_test.go    runnable Go — balance signal → verdict mapping (no cloud)
     ├── api_smoke.sh         runnable curl — smoke the deployed dashboard-api
@@ -40,6 +42,11 @@ Every row is a **hermetic** Go test — no network, no DB — so the whole matri
 | `RunQuery` guard | `internal/dashboardapi/control_test.go` | read-only console rejects every mutating / multi-statement input **before** DB access; honours the control token; 405 on non-POST |
 | `parseARN`, naming | `internal/dashboardapi/control_test.go` | inventory ARN parsing + project/env naming convention |
 | `AmountRange`, `SignLabel` | `internal/memory/consolidation_test.go` | episodic fingerprint bucketing |
+| Policy defaults | `internal/agent/policy_test.go` | missing/unreachable policy falls back to the calibrated thresholds, never to zeros |
+| `TaskControl`, `BulkReview`, `MemoryAdmin`, `MemoryJob`, `RollbackService` | `internal/dashboardapi/ops_test.go` | every mutating endpoint rejects bad input **before** touching storage; control-token gate on all of them |
+| `alterRegion`, `regionNameRe` | `internal/dashboardapi/regions_test.go` | SQL-injection region names rejected; unknown action refused before any DB round-trip |
+| `invokable`, `ScheduleOne`, `InvokeService`, `Search` | `internal/dashboardapi/node_control_test.go` | control plane cannot invoke itself; useless search queries never reach the DB |
+| `shortService`, `sortByCostDesc`, `estimateCost` | `internal/dashboardapi/cloudcost_test.go` | cloud-cost parsing/ordering and Haiku pricing maths |
 
 DB-backed integration tests (`internal/memory/*_integration_test.go`) cover SKIP LOCKED claims and memory concurrency and need `DATABASE_URL`.
 

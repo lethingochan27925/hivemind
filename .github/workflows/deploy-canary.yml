@@ -1,30 +1,47 @@
 name: Deploy Canary Production
 
+# Last link of the delivery chain, and the only one that moves production
+# traffic. It triggers on Smoke Test — not on Deploy Staging — so the control
+# plane has already been proven healthy before any weight shifts.
+#
+# Per service: send CANARY_WEIGHT of traffic to the new version, wait, read the
+# CloudWatch error alarm, then promote to 100% or roll the alias back and fail.
+
 on:
   workflow_run:
-    workflows: ["Deploy Staging"]
+    workflows: ["Smoke Test"]
     types: [completed]
     branches: [main]
+  workflow_dispatch: {}
 
 env:
   AWS_REGION: ap-southeast-1
   PROJECT: hivemind
   ENVIRONMENT: dev
-  CANARY_WEIGHT: 0.10
-  CANARY_WAIT_SECONDS: 300
+  CANARY_WEIGHT: '0.10'
+  CANARY_WAIT_SECONDS: '300'
 
 permissions:
   id-token: write
   contents: read
 
+# Two canaries shifting the same alias at once would interleave weights and make
+# the rollback target wrong. Queue instead of cancelling — a cancelled canary
+# leaves traffic split.
+concurrency:
+  group: deploy-canary
+  cancel-in-progress: false
+
 jobs:
   canary-deploy:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    name: Canary ${{ matrix.service }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     strategy:
+      fail-fast: false
       matrix:
         service: [agent-worker, scoring-api, scoring-python, dashboard-api]
-      fail-fast: false
 
     steps:
       - name: Configure AWS credentials via OIDC
@@ -33,72 +50,114 @@ jobs:
           role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Get function and current version info
+      - name: Resolve current and candidate versions
         id: info
+        env:
+          SERVICE: ${{ matrix.service }}
         run: |
-          FUNCTION_NAME="${PROJECT}-${ENVIRONMENT}-${{ matrix.service }}"
+          FUNCTION_NAME="${PROJECT}-${ENVIRONMENT}-${SERVICE}"
+
+          # $LATEST must be filtered out before to_number(): jmespath returns
+          # null for it and max_by then errors out.
           NEW_VERSION=$(aws lambda list-versions-by-function \
             --function-name "$FUNCTION_NAME" \
-            --query 'max_by(Versions, &to_number(Version))' \
-            --output json | jq -r '.Version')
-          CURRENT_ALIAS=$(aws lambda get-alias \
-            --function-name "$FUNCTION_NAME" \
-            --name live)
-          OLD_VERSION=$(echo "$CURRENT_ALIAS" | jq -r '.FunctionVersion')
+            --query "max_by(Versions[?Version!='\$LATEST'], &to_number(Version)).Version" \
+            --output text)
+          OLD_VERSION=$(aws lambda get-alias \
+            --function-name "$FUNCTION_NAME" --name live \
+            --query 'FunctionVersion' --output text)
+
+          if [ -z "$NEW_VERSION" ] || [ "$NEW_VERSION" = "None" ]; then
+            echo "::error::no published version found for $FUNCTION_NAME"; exit 1
+          fi
 
           echo "function_name=$FUNCTION_NAME" >> "$GITHUB_OUTPUT"
-          echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
-          echo "old_version=$OLD_VERSION" >> "$GITHUB_OUTPUT"
+          echo "new_version=$NEW_VERSION"     >> "$GITHUB_OUTPUT"
+          echo "old_version=$OLD_VERSION"     >> "$GITHUB_OUTPUT"
+          echo "  $FUNCTION_NAME: live=$OLD_VERSION candidate=$NEW_VERSION"
 
-      - name: Shift 10% traffic to new version
+          if [ "$NEW_VERSION" = "$OLD_VERSION" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "  alias already serves the newest version — nothing to shift"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Shift canary traffic to the new version
+        if: steps.info.outputs.changed == 'true'
         run: |
           aws lambda update-alias \
             --function-name "${{ steps.info.outputs.function_name }}" \
             --name live \
             --function-version "${{ steps.info.outputs.old_version }}" \
             --routing-config "AdditionalVersionWeights={${{ steps.info.outputs.new_version }}=${CANARY_WEIGHT}}"
+          echo "canary started: ${CANARY_WEIGHT} of traffic -> version ${{ steps.info.outputs.new_version }}"
 
-          echo "Canary started: ${CANARY_WEIGHT} traffic -> version ${{ steps.info.outputs.new_version }}"
+      - name: Observe
+        if: steps.info.outputs.changed == 'true'
+        run: sleep "${CANARY_WAIT_SECONDS}"
 
-      - name: Wait and observe
-        run: sleep ${CANARY_WAIT_SECONDS}
-
-      - name: Check CloudWatch error alarm
+      - name: Read the CloudWatch error alarm
         id: check
+        if: steps.info.outputs.changed == 'true'
+        env:
+          SERVICE: ${{ matrix.service }}
         run: |
-          ALARM_NAME="${PROJECT}-${ENVIRONMENT}-${{ matrix.service }}-errors"
-          STATE=$(aws cloudwatch describe-alarms \
-            --alarm-names "$ALARM_NAME" \
-            --query 'MetricAlarms[0].StateValue' \
-            --output text)
-          echo "alarm_state=$STATE" >> "$GITHUB_OUTPUT"
-          echo "Alarm ${ALARM_NAME} state: ${STATE}"
+          ALARM_NAME="${PROJECT}-${ENVIRONMENT}-${SERVICE}-errors"
+          STATE=$(aws cloudwatch describe-alarms --alarm-names "$ALARM_NAME" \
+            --query 'MetricAlarms[0].StateValue' --output text)
 
-      - name: Promote to 100% (alarm OK)
-        if: steps.check.outputs.alarm_state != 'ALARM'
+          # A missing alarm must not read as healthy.
+          if [ -z "$STATE" ] || [ "$STATE" = "None" ]; then
+            echo "::error::alarm $ALARM_NAME does not exist — cannot verify the canary"
+            echo "alarm_state=MISSING" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "alarm_state=$STATE" >> "$GITHUB_OUTPUT"
+          echo "  $ALARM_NAME: $STATE"
+
+      # OK and INSUFFICIENT_DATA both promote. INSUFFICIENT_DATA is the normal
+      # resting state of an error-count alarm on a low-traffic function — it
+      # means no error datapoints were published, not that the check is
+      # inconclusive. ALARM and a missing alarm do not promote.
+      - name: Promote to 100%
+        if: >-
+          steps.info.outputs.changed == 'true' &&
+          (steps.check.outputs.alarm_state == 'OK' ||
+           steps.check.outputs.alarm_state == 'INSUFFICIENT_DATA')
         run: |
           aws lambda update-alias \
             --function-name "${{ steps.info.outputs.function_name }}" \
             --name live \
             --function-version "${{ steps.info.outputs.new_version }}" \
             --routing-config "{}"
-          echo "Promoted: 100% traffic -> version ${{ steps.info.outputs.new_version }}"
+          echo "promoted: 100% -> version ${{ steps.info.outputs.new_version }}"
 
-      - name: Rollback (alarm triggered)
-        if: steps.check.outputs.alarm_state == 'ALARM'
+      # Runs when traffic was actually shifted and the canary did not clear:
+      # the alarm fired, the alarm is missing, or a step failed outright.
+      # Failing open here would defeat the point of a canary.
+      - name: Roll back
+        if: >-
+          !cancelled() && steps.info.outputs.changed == 'true' &&
+          (failure() ||
+           (steps.check.outputs.alarm_state != 'OK' &&
+            steps.check.outputs.alarm_state != 'INSUFFICIENT_DATA'))
         run: |
           aws lambda update-alias \
             --function-name "${{ steps.info.outputs.function_name }}" \
             --name live \
             --function-version "${{ steps.info.outputs.old_version }}" \
             --routing-config "{}"
-          echo "Rolled back: 100% traffic -> version ${{ steps.info.outputs.old_version }} (canary failed)"
+          echo "::error::rolled back to version ${{ steps.info.outputs.old_version }} (alarm=${{ steps.check.outputs.alarm_state }})"
           exit 1
 
   deploy-scheduled-services:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    name: Promote ${{ matrix.service }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
+      fail-fast: false
       matrix:
         service: [dispatcher, reaper, salience-decay]
 
@@ -109,18 +168,23 @@ jobs:
           role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Promote alias directly (low-risk scheduled service)
+      # These run on a schedule and serve no user traffic, so a canary would
+      # only add latency: promote the alias straight to the newest version.
+      - name: Promote alias directly
+        env:
+          SERVICE: ${{ matrix.service }}
         run: |
-          FUNCTION_NAME="${PROJECT}-${ENVIRONMENT}-${{ matrix.service }}"
+          FUNCTION_NAME="${PROJECT}-${ENVIRONMENT}-${SERVICE}"
           NEW_VERSION=$(aws lambda list-versions-by-function \
             --function-name "$FUNCTION_NAME" \
-            --query 'max_by(Versions, &to_number(Version))' \
-            --output json | jq -r '.Version')
+            --query "max_by(Versions[?Version!='\$LATEST'], &to_number(Version)).Version" \
+            --output text)
+
+          if [ -z "$NEW_VERSION" ] || [ "$NEW_VERSION" = "None" ]; then
+            echo "::error::no published version found for $FUNCTION_NAME"; exit 1
+          fi
 
           aws lambda update-alias \
-            --function-name "$FUNCTION_NAME" \
-            --name live \
-            --function-version "$NEW_VERSION" \
-            --routing-config "{}"
-
-          echo "Deployed ${{ matrix.service }} -> version ${NEW_VERSION} (no canary, scheduled service)"
+            --function-name "$FUNCTION_NAME" --name live \
+            --function-version "$NEW_VERSION" --routing-config "{}"
+          echo "$SERVICE -> version $NEW_VERSION"

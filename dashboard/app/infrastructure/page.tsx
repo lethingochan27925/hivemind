@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { api, LambdaInfo, ResourceInfo } from "@/lib/api";
 import { useLive } from "@/lib/use-live";
+import { useFleet } from "@/lib/use-fleet";
+import { useQueryParam } from "@/lib/use-query-param";
 import { Panel } from "@/components/ui/panel";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -85,33 +87,33 @@ interface ChaosRun {
 export default function InfrastructurePage() {
   const { data, error, lastUpdated } = useLive(api.getInfrastructure, 5000);
   const lambdas = useLive(api.getLambdas, 15000);
-  const fleet = useLive(api.getFleetStatus, 10000);
+  const fleet = useFleet();
   const resources = useLive(api.getResources, 60000);
 
   const [simResult, setSimResult] = useState<string | null>(null);
   const [simulating, setSimulating] = useState(false);
   const [chaos, setChaos] = useState<ChaosRun | null>(null);
-  const [node, setNode] = useState<LambdaInfo | null>(null);
-  const [svcOpen, setSvcOpen] = useState<string | null>(null);
+  // Deep-link tu Architecture map: ?node=<lambda> mo node detail, ?res=<service>
+  // mo dung nhom tai nguyen. Ca hai duoc SUY RA tu URL chu khong copy vao state
+  // bang effect; `undefined` nghia la nguoi dung chua dong y kien gi, `null`
+  // nghia la ho da dong no.
+  const nodeParam = useQueryParam("node");
+  const resParam = useQueryParam("res");
+  const [nodePick, setNodePick] = useState<LambdaInfo | null | undefined>(undefined);
+  const [svcPick, setSvcPick] = useState<string | null | undefined>(undefined);
 
   const services = data?.services ?? [];
   const okCount = services.filter((s) => s.alarm_state === "OK").length;
   const alarmOf = (svc: string) => services.find((s) => s.service === svc)?.alarm_state ?? "UNKNOWN";
   const scheduleOf = (svc: string) => fleet.data?.schedules.find((s) => s.service === svc)?.state;
 
-  // Deep-link tu Architecture map: ?node=<lambda> mo node detail, ?res=<service>
-  // mo dung nhom tai nguyen trong inventory.
-  useEffect(() => {
-    const q = new URLSearchParams(window.location.search);
-    const wantNode = q.get("node");
-    const wantRes = q.get("res");
-    if (wantRes && !svcOpen) setSvcOpen(wantRes);
-    if (wantNode && !node && lambdas.data) {
-      const found = lambdas.data.find((l) => l.service === wantNode);
-      if (found) setNode(found);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lambdas.data]);
+  const node =
+    nodePick !== undefined
+      ? nodePick
+      : nodeParam
+        ? (lambdas.data?.find((l) => l.service === nodeParam) ?? null)
+        : null;
+  const svcOpen = svcPick !== undefined ? svcPick : resParam;
 
   const simulate = async () => {
     setSimulating(true);
@@ -200,9 +202,9 @@ export default function InfrastructurePage() {
                     return (
                       <tr
                         key={l.service}
-                        onClick={() => setNode(selected ? null : l)}
+                        onClick={() => setNodePick(selected ? null : l)}
                         tabIndex={0}
-                        onKeyDown={(e) => e.key === "Enter" && setNode(l)}
+                        onKeyDown={(e) => e.key === "Enter" && setNodePick(l)}
                         className={`cursor-pointer border-b border-border/40 outline-none ${
                           selected ? "bg-blue/10" : "hover:bg-bg-panel-hover/60 focus:bg-bg-panel-hover/60"
                         }`}
@@ -249,7 +251,7 @@ export default function InfrastructurePage() {
             node={node}
             alarm={alarmOf(node.service)}
             schedule={scheduleOf(node.service)}
-            onClose={() => setNode(null)}
+            onClose={() => setNodePick(null)}
           />
         )}
 
@@ -266,7 +268,7 @@ export default function InfrastructurePage() {
                 {svcKeys.map((svc) => (
                   <button
                     key={svc}
-                    onClick={() => setSvcOpen(svcOpen === svc ? null : svc)}
+                    onClick={() => setSvcPick(svcOpen === svc ? null : svc)}
                     className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-[13px] transition-colors ${
                       svcOpen === svc
                         ? "border-blue/40 bg-blue/10 text-blue"
@@ -285,7 +287,7 @@ export default function InfrastructurePage() {
                     <span className="text-[13px] font-semibold text-text-primary">
                       {SERVICE_LABEL[svcOpen] ?? svcOpen}
                     </span>
-                    <button onClick={() => setSvcOpen(null)} className="text-text-tertiary hover:text-text-primary">
+                    <button onClick={() => setSvcPick(null)} className="text-text-tertiary hover:text-text-primary">
                       <X size={14} />
                     </button>
                   </div>
@@ -299,7 +301,7 @@ export default function InfrastructurePage() {
                           <button
                             onClick={() => {
                               const l = lambdas.data?.find((x) => r.name.endsWith(x.service));
-                              if (l) setNode(l);
+                              if (l) setNodePick(l);
                             }}
                             className="text-[12px] text-blue hover:underline"
                           >

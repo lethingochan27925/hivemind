@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api, QueryResult } from "@/lib/api";
 import { useLive } from "@/lib/use-live";
+import { useQueryParam } from "@/lib/use-query-param";
 import { Panel } from "@/components/ui/panel";
 import { Stat } from "@/components/ui/stat";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +27,7 @@ const TABLE_TONE: Record<string, "blue" | "green" | "purple" | "yellow"> = {
 
 export default function DatabasePage() {
   const { data, error, lastUpdated } = useLive(api.getDbStats, 10000);
+  const presetSql = useQueryParam("sql");
   const [sql, setSql] = useState(PRESETS[0].sql);
   const [result, setResult] = useState<QueryResult | null>(null);
   const [queryErr, setQueryErr] = useState<string | null>(null);
@@ -47,11 +49,29 @@ export default function DatabasePage() {
   };
 
   // Deep-link tu global search: /database?sql=<query> tu dien va chay luon.
+  // Moi setState nam trong continuation cua promise, khong goi dong bo trong
+  // than effect - do la cai gay cascading render.
   useEffect(() => {
-    const preset = new URLSearchParams(window.location.search).get("sql");
-    if (preset) run(preset);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (!presetSql) return;
+    let alive = true;
+    api
+      .runQuery(presetSql)
+      .then((r) => {
+        if (!alive) return;
+        setSql(presetSql);
+        setResult(r);
+        setQueryErr(null);
+      })
+      .catch((e) => {
+        if (!alive) return;
+        setSql(presetSql);
+        setResult(null);
+        setQueryErr((e as Error).message);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [presetSql]);
 
   const fmt = (v: unknown) =>
     v === null || v === undefined

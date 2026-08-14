@@ -98,6 +98,7 @@ export function CommandPalette() {
     return [
       nav("/", "Mission Control", "overview home kpi verdict", <LayoutGrid size={15} />),
       nav("/reviews", "Review Queue", "human approve reject escalate", <ClipboardCheck size={15} />),
+      nav("/training", "Training Lab", "train learn batch memory experiment", <Brain size={15} />),
       nav("/memory", "Fleet & Memory", "episodic salience agents patterns", <Brain size={15} />),
       nav("/transactions", "Transactions", "audit decision trace verdict", <Activity size={15} />),
       nav("/database", "Database", "cockroachdb sql query console rows", <Database size={15} />),
@@ -136,10 +137,7 @@ export function CommandPalette() {
   const [results, setResults] = useState<SearchResults | null>(null);
   useEffect(() => {
     const q = query.trim();
-    if (!open || q.length < 2) {
-      setResults(null);
-      return;
-    }
+    if (!open || q.length < 2) return; // ket qua duoc loc o duoi, khong setState o day
     const t = setTimeout(() => {
       api
         .search(q)
@@ -150,7 +148,8 @@ export function CommandPalette() {
   }, [query, open]);
 
   const dataItems: Item[] = useMemo(() => {
-    if (!results) return [];
+    // Ket qua chi hop le khi query hien tai du dai va khop voi lan tim gan nhat.
+    if (!results || query.trim().length < 2 || results.query !== query.trim()) return [];
     const go = (path: string) => {
       router.push(path);
       close();
@@ -202,7 +201,7 @@ export function CommandPalette() {
       });
     }
     return out;
-  }, [results, router, close]);
+  }, [results, query, router, close]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -235,10 +234,6 @@ export function CommandPalette() {
     if (open) setTimeout(() => inputRef.current?.focus(), 10);
   }, [open]);
 
-  useEffect(() => {
-    setIndex(0);
-  }, [query]);
-
   if (!open) return null;
 
   const groups: ("Go to" | "Actions" | "Data")[] = ["Go to", "Actions", "Data"];
@@ -260,7 +255,10 @@ export function CommandPalette() {
           <input
             ref={inputRef}
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setIndex(0);
+            }}
             onKeyDown={(e) => {
               if (e.key === "ArrowDown") {
                 e.preventDefault();

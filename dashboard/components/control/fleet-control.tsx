@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { api } from "@/lib/api";
-import { useLive } from "@/lib/use-live";
+import { useFleet, refreshFleet } from "@/lib/use-fleet";
 import { Panel } from "@/components/ui/panel";
 import { Badge } from "@/components/ui/badge";
 import { Play, Pause, Zap, Plus, Loader2 } from "lucide-react";
@@ -21,7 +21,7 @@ const TASK_TONES: Record<string, string> = {
  * trigger a dispatch cycle that invokes the worker fleet.
  */
 export function FleetControl() {
-  const { data } = useLive(api.getFleetStatus, 4000);
+  const { data } = useFleet();
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [feed, setFeed] = useState(50);
@@ -37,6 +37,7 @@ export function FleetControl() {
     } catch (e) {
       setMsg(`Failed: ${(e as Error).message}`);
     } finally {
+      await refreshFleet();
       setBusy(null);
     }
   };

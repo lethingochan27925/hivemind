@@ -62,6 +62,7 @@ export function PolicyPanel() {
     <Panel
       title="Agent policy"
       subtitle="how the fleet decides - editable while it runs"
+      defaultCollapsed
       actions={
         <div className="flex items-center gap-2">
           {dirty && <Badge variant="yellow">unsaved</Badge>}

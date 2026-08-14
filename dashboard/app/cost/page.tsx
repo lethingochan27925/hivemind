@@ -13,7 +13,8 @@ import { BarList } from "@/components/charts/bar-list";
 import { Coins, DollarSign } from "lucide-react";
 
 export default function CostPage() {
-  const { data, error, lastUpdated } = useLive(api.getCost, 10000);
+  const { data, error, loading, lastUpdated } = useLive(api.getCost, 10000);
+  const pending = loading && !data;
   const agents = data?.by_agent ?? [];
 
   return (
@@ -34,10 +35,12 @@ export default function CostPage() {
             label="Tokens today"
             value={data?.total_tokens_today != null ? data.total_tokens_today.toLocaleString() : "-"}
             color="blue"
+            loading={pending}
             icon={<Coins size={12} />}
           />
           <Stat
             label="Estimated spend today"
+            loading={pending}
             value={
               data?.estimated_cost_usd_today != null
                 ? `$${data.estimated_cost_usd_today.toFixed(4)}`

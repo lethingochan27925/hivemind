@@ -1,0 +1,26 @@
+{
+    "columns": [
+        "money_flow",
+        "verdict",
+        "count"
+    ],
+    "row_count": 3,
+    "rows": [
+        [
+            "traceable",
+            "fraud",
+            5
+        ],
+        [
+            "traceable",
+            "legit",
+            22
+        ],
+        [
+            "untraceable",
+            "escalate",
+            73
+        ]
+    ],
+    "truncated": false
+}

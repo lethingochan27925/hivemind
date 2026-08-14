@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { useLive } from "@/lib/use-live";
+import { useFleet } from "@/lib/use-fleet";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { LangToggle } from "@/components/layout/lang-toggle";
 import { useT } from "@/lib/i18n";
@@ -15,7 +16,7 @@ import { Command, CircleDot, AlertTriangle, DollarSign } from "lucide-react";
  */
 export function Topbar() {
   const t = useT();
-  const fleet = useLive(api.getFleetStatus, 8000);
+  const fleet = useFleet();
   const infra = useLive(api.getInfrastructure, 20000);
   const cost = useLive(api.getCost, 60000);
 

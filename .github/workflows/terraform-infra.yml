@@ -1,5 +1,9 @@
 name: Terraform Infrastructure
 
+# Plan on every pull request that touches terraform/, apply only when a human
+# dispatches it. The plan is posted back to the pull request so the diff is
+# reviewed before it reaches an account.
+
 on:
   pull_request:
     paths:
@@ -15,14 +19,29 @@ on:
           - plan
           - apply
 
+env:
+  AWS_REGION: ap-southeast-1
+  TF_VERSION: '1.14.8'
+
 permissions:
   id-token: write
   contents: read
   pull-requests: write
 
+concurrency:
+  group: terraform-infra-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   terraform:
+    name: Plan / apply
+    # Pull requests from forks cannot mint an OIDC token or read secrets, so the
+    # job would fail for a reason the contributor cannot fix. Skip it there.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: terraform
@@ -31,18 +50,18 @@ jobs:
 
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: '1.9.0'
+          terraform_version: ${{ env.TF_VERSION }}
 
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
-          aws-region: ap-southeast-1
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Terraform Init
-        run: terraform init
+      - name: Terraform init
+        run: terraform init -input=false
 
-      - name: Terraform Plan
+      - name: Terraform plan
         id: plan
         env:
           TF_VAR_cockroachdb_connection_string: ${{ secrets.DATABASE_URL }}
@@ -50,27 +69,52 @@ jobs:
           TF_VAR_cockroachdb_mcp_api_key: ${{ secrets.COCKROACHDB_MCP_API_KEY }}
           TF_VAR_cockroachdb_cluster_id: ${{ secrets.COCKROACHDB_CLUSTER_ID }}
           TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
-        run: terraform plan -no-color -out=tfplan
+        # Deliberately allowed to fail so the error still reaches the pull
+        # request as a comment; the job is failed afterwards by the guard step.
         continue-on-error: true
+        run: terraform plan -no-color -input=false -out=tfplan
 
-      - name: Comment Plan on PR
+      # The plan text is passed through the environment, never interpolated into
+      # the script body: plan output is attacker-influenced (resource names,
+      # tags) and `${{ }}` inside `script:` is executed as JavaScript.
+      - name: Comment the plan on the pull request
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
+        env:
+          PLAN: ${{ steps.plan.outputs.stdout }}
+          PLAN_ERR: ${{ steps.plan.outputs.stderr }}
+          OUTCOME: ${{ steps.plan.outcome }}
         with:
           script: |
-            const output = `#### Terraform Plan
-            \`\`\`
-            ${{ steps.plan.outputs.stdout }}
-            \`\`\`
-            `;
-            github.rest.issues.createComment({
+            const raw = process.env.PLAN || process.env.PLAN_ERR || '(no output)';
+            const plan = raw.length > 60000
+              ? raw.slice(0, 60000) + '\n... truncated ...'
+              : raw;
+            const body = [
+              '#### Terraform Plan: `' + process.env.OUTCOME + '`',
+              '',
+              '<details><summary>Show plan</summary>',
+              '',
+              '```terraform',
+              plan,
+              '```',
+              '',
+              '</details>',
+            ].join('\n');
+            await github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: output
+              body,
             });
 
-      - name: Terraform Apply
+      - name: Fail if the plan errored
+        if: steps.plan.outcome == 'failure'
+        run: |
+          echo "::error::terraform plan failed — see the plan comment above"
+          exit 1
+
+      - name: Terraform apply
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply'
         env:
           TF_VAR_cockroachdb_connection_string: ${{ secrets.DATABASE_URL }}
@@ -78,4 +122,4 @@ jobs:
           TF_VAR_cockroachdb_mcp_api_key: ${{ secrets.COCKROACHDB_MCP_API_KEY }}
           TF_VAR_cockroachdb_cluster_id: ${{ secrets.COCKROACHDB_CLUSTER_ID }}
           TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
-        run: terraform apply -auto-approve tfplan
+        run: terraform apply -auto-approve -input=false tfplan

@@ -101,6 +101,16 @@ func (s *Server) alterRegion(w http.ResponseWriter, r *http.Request) {
 	action := strings.ToLower(strings.TrimSpace(body.Action))
 	region := strings.ToLower(strings.TrimSpace(body.Region))
 
+	// Chan action la ngay - khong de request rac mo ket noi database.
+	validActions := map[string]bool{
+		"add": true, "drop": true, "set_primary": true,
+		"survive_region": true, "survive_zone": true,
+	}
+	if !validActions[action] {
+		http.Error(w, "action must be add | drop | set_primary | survive_region | survive_zone", http.StatusBadRequest)
+		return
+	}
+
 	needsRegion := action == "add" || action == "drop" || action == "set_primary"
 	if needsRegion && !regionNameRe.MatchString(region) {
 		http.Error(w, "invalid region name", http.StatusBadRequest)

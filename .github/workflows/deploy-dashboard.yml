@@ -1,8 +1,12 @@
 name: Deploy Dashboard
 
-# Continuous delivery for the static control-plane dashboard (the required public
-# demo URL). Builds the Next.js static export with the live API URL baked in,
-# syncs it to S3, and invalidates CloudFront. Runs when the dashboard changes.
+# Continuous delivery for the static control-plane dashboard — the public demo
+# URL. Builds the Next.js static export with the live API URL baked in, syncs it
+# to S3, and invalidates CloudFront.
+#
+# The API URL is read from Terraform outputs at deploy time, never hardcoded:
+# the stack has been destroyed and rebuilt repeatedly and every rebuild issues a
+# new Lambda Function URL.
 
 on:
   push:
@@ -16,18 +20,24 @@ env:
   AWS_REGION: ap-southeast-1
   PROJECT: hivemind
   ENVIRONMENT: dev
+  TF_VERSION: '1.14.8'
+  NODE_VERSION: '22'
 
 permissions:
   id-token: write
   contents: read
 
+# `s3 sync --delete` is not atomic; cancelling one mid-flight can leave the site
+# with deleted-but-not-replaced assets.
 concurrency:
   group: deploy-dashboard
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy-dashboard:
+    name: Build and publish
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -39,29 +49,49 @@ jobs:
 
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: '1.9.0'
+          terraform_version: ${{ env.TF_VERSION }}
 
-      - name: Read infra outputs (API URL + bucket)
+      - name: Read infrastructure outputs
         id: tf
         working-directory: terraform
         run: |
-          terraform init
-          echo "api_url=$(terraform output -raw dashboard_api_url)" >> "$GITHUB_OUTPUT"
-          echo "bucket=$(terraform output -raw dashboard_bucket_name)" >> "$GITHUB_OUTPUT"
+          terraform init -input=false
+          API_URL=$(terraform output -raw dashboard_api_url)
+          BUCKET=$(terraform output -raw dashboard_bucket_name)
+          if [ -z "$API_URL" ] || [ -z "$BUCKET" ]; then
+            echo "::error::terraform outputs are empty — is the stack applied?"; exit 1
+          fi
+          echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
+          echo "bucket=$BUCKET"   >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
           cache-dependency-path: dashboard/package-lock.json
 
-      - name: Build static dashboard
+      - name: Build static export
         working-directory: dashboard
         env:
           NEXT_PUBLIC_DASHBOARD_API_URL: ${{ steps.tf.outputs.api_url }}
         run: |
           npm ci
           npm run build
+
+      # The API base URL is compiled into the bundle. If it fell back to the
+      # localhost default, the deployed dashboard would render but every panel
+      # would read "Failed to fetch" — verify before publishing, not after.
+      - name: Verify the API URL was baked in
+        working-directory: dashboard
+        env:
+          API_URL: ${{ steps.tf.outputs.api_url }}
+        run: |
+          HOST=$(printf '%s' "$API_URL" | sed -E 's#^https?://##; s#/.*$##')
+          if ! grep -rqF "$HOST" out/_next/static; then
+            echo "::error::the built bundle does not contain $HOST — NEXT_PUBLIC_DASHBOARD_API_URL did not apply"
+            exit 1
+          fi
+          echo "bundle points at $HOST"
 
       - name: Sync to S3
         run: aws s3 sync dashboard/out "s3://${{ steps.tf.outputs.bucket }}" --delete
@@ -75,4 +105,4 @@ jobs:
             echo "::error::CloudFront distribution not found"; exit 1
           fi
           aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths '/*'
-          echo "Dashboard deployed and CloudFront ($DIST_ID) invalidated."
+          echo "dashboard published; CloudFront $DIST_ID invalidated"
