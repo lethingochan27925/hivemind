@@ -131,3 +131,14 @@ resource "aws_iam_role_policy" "github_actions" {
     ]
   })
 }
+
+# Terraform refresh doc trang thai cua MOI tai nguyen truoc khi apply, va phan
+# lon cac API Describe/List (ssm:DescribeParameters, logs:DescribeLogGroups,
+# s3:GetBucket*, iam:GetRole...) khong danh gia dieu kien aws:ResourceTag -
+# nen statement `*` gioi han theo tag o tren khong bao gio cho phep chung.
+# Doc thi cap rong bang managed policy; moi thao tac GHI van bi kho boi cac
+# statement tag-scoped va ARN-scoped phia tren.
+resource "aws_iam_role_policy_attachment" "github_actions_readonly" {
+  role       = aws_iam_role.github_actions.name
+  policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
+}

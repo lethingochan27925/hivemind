@@ -39,6 +39,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+          check-latest: true
           cache: true
 
       # Pinned: an unpinned @latest turns "a new CVE was published" into "the
@@ -103,7 +104,7 @@ jobs:
       # repository is most exposed to, and they are cheap to assert directly.
       - name: No credential files tracked by git
         run: |
-          BAD=$(git ls-files | grep -E '(^|/)\.env($|\.)|\.tfvars$|\.tfstate$|\.pem$|\.p12$|id_rsa' || true)
+          BAD=$(git ls-files | grep -E '(^|/)\.env(\..*)?$|\.tfvars$|\.tfstate$|\.pem$|\.p12$|id_rsa' | grep -v '\.env\.example$' || true)
           if [ -n "$BAD" ]; then
             echo "::error::credential-bearing files are tracked:"; echo "$BAD"; exit 1
           fi
