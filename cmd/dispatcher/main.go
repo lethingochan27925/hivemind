@@ -17,6 +17,7 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	lambdasvc "github.com/aws/aws-sdk-go-v2/service/lambda"
 	lambdatypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
+	"github.com/lethingochan27925/hivemind/internal/budget"
 	"github.com/lethingochan27925/hivemind/internal/config"
 	"github.com/lethingochan27925/hivemind/internal/stream"
 	"github.com/lethingochan27925/hivemind/pkg/cockroach"
@@ -40,9 +41,12 @@ type Dispatcher struct {
 }
 
 type CycleResult struct {
-	TasksCreated   int `json:"tasks_created"`
-	PendingTasks   int `json:"pending_tasks"`
-	WorkersInvoked int `json:"workers_invoked"`
+	TasksCreated   int  `json:"tasks_created"`
+	PendingTasks   int  `json:"pending_tasks"`
+	WorkersInvoked int  `json:"workers_invoked"`
+	BudgetExceeded bool `json:"budget_exceeded,omitempty"`
+
+	SpendTodayUSD float64 `json:"spend_today_usd,omitempty"`
 }
 
 func NewDispatcher(ctx context.Context) (*Dispatcher, error) {
@@ -88,11 +92,30 @@ func (d *Dispatcher) RunOnce(ctx context.Context) (CycleResult, error) {
 		return CycleResult{TasksCreated: created}, err
 	}
 
+	// PHANH NGAN SACH o noi duy nhat sinh chi phi Bedrock. Truoc day guard
+	// nam trong GET /cost/budget - chi chay khi co nguoi mo trang Cost, tuc
+	// khong phai la phanh. O day no chay moi chu ky du khong ai nhin.
+	// Loi kiem tra thi fail-open: mot cu glitch DB khong duoc phep dung fleet.
+	spend, limit, exceeded, berr := budget.Exceeded(ctx, d.db)
+	if berr != nil {
+		log.Printf("budget check failed (fail-open): %v", berr)
+	}
+	if exceeded {
+		log.Printf("daily budget exhausted ($%.4f >= $%.2f) - not invoking workers", spend, limit)
+		return CycleResult{
+			TasksCreated:   created,
+			PendingTasks:   pending,
+			BudgetExceeded: true,
+			SpendTodayUSD:  spend,
+		}, nil
+	}
+
 	invoked, err := d.scaleFleet(ctx, pending)
 	return CycleResult{
 		TasksCreated:   created,
 		PendingTasks:   pending,
 		WorkersInvoked: invoked,
+		SpendTodayUSD:  spend,
 	}, err
 }
 

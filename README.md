@@ -39,11 +39,12 @@ A cheap classifier sweeps every transaction. Only the ~2% it cannot clear reach 
 | | |
 |---|---|
 | Fraud recall / precision / F1 | **100% / 100% / 100%** (34 caught, 0 false alarms, 0 missed) |
+| Evidence alignment | **100% of traceable-money cases decided autonomously · 100% of untraceable ones escalated** — verdicts track evidence, never vibes |
 | Auto-resolved without a human | **46%** — the rest the agent escalates on purpose |
 | Verdicts from real reasoning | **94.3%** model decisions vs 5.7% rule-based fallback (recorded separately, never disguised) |
 | Cost | **$0.00023 per investigation** ≈ $0.11 per 500-case run |
 | Fleet integrity | **0 double claims**, 3,201 tasks resumed from checkpoint after a crash |
-| Memory reuse | 68 consolidated memories absorbing **3,217 raw cases** (~47:1) |
+| Memory reuse | 115 consolidated memories absorbing **3,873 raw cases** (~34:1) |
 | **Verdict stability under memory change** | **0.0 points** — same 60 cases, empty memory vs full memory, identical outcomes |
 
 That last row is the one to read twice: recalled text never overrides the arithmetic evidence.

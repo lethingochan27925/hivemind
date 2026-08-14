@@ -14,6 +14,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -469,7 +470,13 @@ func (s *Server) RunQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := s.DB.Pool.Query(r.Context(), q)
+	// Console nay public: mot cau join tich Descartes co the chay het 30s
+	// timeout cua Lambda va dot RU cua CockroachDB serverless. 5 giay du cho
+	// moi truy van hop le tren du lieu demo.
+	const queryTimeout = 5 * time.Second
+	qctx, cancel := context.WithTimeout(r.Context(), queryTimeout)
+	defer cancel()
+	rows, err := s.DB.Pool.Query(qctx, q)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("query error: %v", err), http.StatusBadRequest)
 		return
