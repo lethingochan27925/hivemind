@@ -12,8 +12,8 @@ working after the stack is destroyed and rebuilt.
 
 | Need | Used by |
 |------|---------|
-| Go 1.23+ | `build test fmt vet fuzz eval gen-data` |
-| Node 20+ | `lint ui-build dev deploy-ui` |
+| Go 1.25+ | `build test fmt vet fuzz eval gen-data` |
+| Node 22+ | `lint ui-build dev deploy-ui` |
 | Docker | `deploy deploy-api init` (Lambda container images) |
 | AWS CLI v2 + credentials in `.env` | anything that touches the cloud |
 | Terraform 1.6+ | `init tf-plan tf-apply destroy iam` |
@@ -60,8 +60,9 @@ It mirrors what CI enforces, so a green `check` means a green pipeline.
 
 `make ship` is `check` + `deploy` + `deploy-ui`. Use it before a demo.
 
-Service names for `S=`: `agent-worker`, `dispatcher`, `memory-consolidator`,
-`ingest`, `dashboard-api`, `mcp-server`.
+Service names for `S=`: `agent-worker`, `dispatcher`, `reaper`,
+`salience-decay`, `scoring-api`, `dashboard-api` (`scoring-python` deploys
+separately — see `scripts/deploy-lambda.sh scoring-python`).
 
 ## 4. Operating the fleet
 
@@ -130,7 +131,7 @@ make ui-build      # static build, no deploy
 
 ```bash
 make fuzz          # three fuzz targets, 60s each
-make pipeline-test # 25 CI/CD invariants, no cloud needed
+make pipeline-test # 100+ CI/CD invariants, no cloud needed (exact count: run it)
 ```
 
 ## The three sequences worth memorising

@@ -16,26 +16,17 @@ An LLM is born amnesiac: every Bedrock call starts from a blank page. Episodic m
 
 ### Construction (asynchronous, after a case closes)
 
-```mermaid
-flowchart LR
-    Close["case closed<br/>(fraud / legit)"] --> Summ["Bedrock: 1-line summary"]
-    Summ --> Embed["Titan: embed → VECTOR(1024)"]
-    Embed --> Search["vector search top-1"]
-    Search -->|"similarity > 0.92"| Merge["merge_cases()<br/>merge_count++, refresh summary"]
-    Search -->|"otherwise"| Insert["insert new case (salience = 1.0)"]
-```
+<p align="center">
+  <img src="images/agentic-memory-construction.png" alt="Construction pipeline: a closed case is summarised by Bedrock, embedded by Titan, then either merged into a similar existing memory above 0.92 similarity or inserted as a new one" width="900">
+</p>
 
 Consolidation means the memory table doesn't bloat with near-duplicates: the tenth "TRANSFER that drains the origin to zero" **strengthens** one memory (higher `merge_count`, higher effective salience) instead of adding a tenth row. This is deduplication *by meaning*, powered by the vector index.
 
 ### Query (synchronous, during a new investigation)
 
-```mermaid
-flowchart LR
-    Alert["new alert"] --> Pre["SQL pre-filter<br/>(transaction_type, amount_range, archived=false)"]
-    Pre --> Vec["VECTOR search top-k<br/>on the narrowed set"]
-    Vec --> Ctx["inject top-3 summaries into prompt"]
-    Ctx --> Recall["recall_count++, last_recalled_at = now()"]
-```
+<p align="center">
+  <img src="images/agentic-memory-query.png" alt="Query pipeline: a new alert is pre-filtered by SQL, then vector-searched for the top-k similar cases, whose top-3 summaries are injected into the prompt and reinforced" width="900">
+</p>
 
 The context window stays small and bounded — **system prompt + top-3 case summaries + the current alert**, never a dump of history. Recalling a memory also *reinforces* it (`recall_count++`), so memories that keep proving useful resist decay. This is retrieval-induced strengthening: the fleet's memory adapts to what actually recurs.
 

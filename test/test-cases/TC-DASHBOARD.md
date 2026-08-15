@@ -1,4 +1,4 @@
-# TC-DASHBOARD — Mission Control UI (8 pages)
+# TC-DASHBOARD — Mission Control UI (10 pages)
 
 Traces to: **Real-World Impact, Production Readiness** (observability). Manual/exploratory unless a component test exists. Precondition for all: dashboard deployed, `dashboard-api` reachable, PaySim seeded.
 

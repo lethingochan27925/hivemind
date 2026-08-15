@@ -196,7 +196,7 @@ sql: ## Chay mot cau SQL chi-doc:  make sql Q="SELECT COUNT(*) FROM tasks"
 # ---------------------------------------------------------------- ci/cd
 
 .PHONY: cicd
-cicd: ## Kiem tra 107 bat bien cua pipeline (khong can cloud)
+cicd: ## Kiem tra bat bien cua pipeline, 100+ (khong can cloud; so chinh xac in o dong cuoi)
 	bash test/integration/pipeline_test.sh
 
 .PHONY: actionlint

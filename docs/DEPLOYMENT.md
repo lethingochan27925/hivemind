@@ -34,14 +34,9 @@ The Lambdas read configuration from SSM at cold start (see `internal/config/conf
 
 What it does, in order:
 
-```mermaid
-flowchart LR
-    A["init.sh"] --> B["terraform apply<br/>ECR, IAM, Lambda, EventBridge, S3, CloudFront"]
-    B --> C["docker build + push<br/>7 Go images → ECR"]
-    C --> D["update-function-code --publish<br/>+ update-alias live"]
-    D --> E["run_schema.py<br/>create tables + vector index"]
-    E --> F["seed PaySim + case_memory"]
-```
+<p align="center">
+  <img src="images/deployment-init-flow.png" alt="init.sh sequence: terraform apply, docker build and push, publish and alias the Lambdas, create the schema, then seed PaySim data" width="900">
+</p>
 
 > **The alias trap.** Lambdas are pinned to the `live` alias with `ignore_changes = [function_version]`. After every image push you must `aws lambda update-function-code … --publish` **then** `aws lambda update-alias … --function-version N` — Terraform alone will not move the alias. `init.sh` handles this; if you push a Lambda by hand, do both steps.
 

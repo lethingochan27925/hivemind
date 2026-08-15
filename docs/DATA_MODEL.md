@@ -2,64 +2,9 @@
 
 Four tables carry the whole system. The DDL below is **dumped from the live CockroachDB cluster** (`backups/…/schema.sql`), not idealised — every index shown is one the running system actually keeps.
 
-```mermaid
-erDiagram
-    transactions ||--o| tasks : "1:1 (UNIQUE transaction_id)"
-    tasks ||--o{ audit_log : "1:N decision trail"
-    transactions ||--o{ audit_log : "referenced"
-    tasks }o..o| case_memory : "source_task_id (episodic)"
-
-    transactions {
-        UUID id PK
-        int step
-        string type "TRANSFER | CASH_OUT"
-        float amount
-        string name_orig
-        float old_balance_orig
-        float new_balance_orig
-        string name_dest
-        float old_balance_dest
-        float new_balance_dest
-        float risk_score
-        string risk_tier "low | medium | high"
-        bool is_fraud_label "ground truth"
-        timestamptz arrived_at
-    }
-    tasks {
-        UUID id PK
-        UUID transaction_id FK "UNIQUE"
-        string status "pending→…→done"
-        string claimed_by
-        timestamptz heartbeat_at "staleness → reaper"
-        string step "resume point"
-        jsonb scratchpad "partial state"
-        string verdict "fraud | legit | escalate"
-        float confidence
-        string review_decision
-    }
-    case_memory {
-        UUID id PK
-        string summary
-        string verdict
-        string pattern_type
-        vector embedding "VECTOR(1024)"
-        float salience "0.0–2.0"
-        int recall_count
-        int merge_count
-        bool archived
-    }
-    audit_log {
-        UUID id PK
-        UUID task_id FK
-        string agent_id
-        string action "13 enum values"
-        string reasoning
-        int memory_hits
-        int tokens_in
-        int tokens_out
-        int latency_ms
-    }
-```
+<p align="center">
+  <img src="images/data-model-erd.png" alt="Entity-relationship diagram of the four tables: transactions, tasks, case_memory and audit_log, with their columns and relationships" width="480">
+</p>
 
 ## `transactions` — the raw event
 

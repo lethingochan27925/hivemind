@@ -67,10 +67,8 @@ bash test/integration/api_smoke.sh "$(terraform -chdir=terraform output -raw das
 
 ## Test pyramid
 
-```mermaid
-flowchart TD
-    U["Unit — deterministic, no I/O<br/>balanceSignal · RiskTier · EncodeVector · classifyPattern<br/>Scratchpad · RunQuery guard · flexFloat64 · SanitizeField"] --> I["Integration — needs DB / AWS<br/>SKIP LOCKED claims · memory concurrency · API smoke"]
-    I --> M["Manual / demo — scripted scenarios<br/>crash-kill · region-kill · human review"]
-```
+<p align="center">
+  <img src="../docs/images/test-pyramid.png" alt="Test pyramid: hermetic unit tests at the base, DB/AWS integration tests above them, and scripted manual demo scenarios at the top" width="460">
+</p>
 
 Most assertions live at the bottom (fast, hermetic, run every push). The expensive resilience proofs (crash-kill, region-kill) are scripted manual scenarios in `TEST_PLAN.md` §7 and captured in the `evidence/` clips.

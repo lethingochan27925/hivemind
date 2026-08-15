@@ -55,7 +55,7 @@ A second, equally important goal: prove that **nothing in the control plane can 
 |--------|--------|----------|
 | Recall / precision (labelled eval) | ≥ 65% | **100% / 100%** (34/34 fraud, 0/340 false positives) |
 | Auto-resolved without a human | report | **~46%** of the investigate tier |
-| Cost per investigation run | minimise | **~$0.09** (Haiku + Titan) |
+| Cost per investigation run | minimise | **$0.00023** (Haiku + Titan) ≈ $0.11 per 500-case run |
 | Double-claims under 20 workers | 0 | 0 |
 | Task resume latency after kill | ≤ 30s | ≤ 30s |
 | Escalations caused by infrastructure (not ambiguity) | 0 | 0 once `fallback_action = requeue` |

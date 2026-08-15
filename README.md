@@ -15,22 +15,9 @@ To prove it under the harshest conditions, the demo workload is **fraud investig
 
 ## 1. What it actually does
 
-```mermaid
-flowchart LR
-    S["PaySim transaction stream"] --> SC["scoring-api<br/>XGBoost risk score"]
-    SC -->|"risk &lt; low"| AA["auto-approve"]
-    SC -->|"risk &gt; high"| AB["auto-block"]
-    SC -->|"middle band ~2%"| D["dispatcher"]
-    D --> Q[("tasks<br/>working memory")]
-    Q -->|"SKIP LOCKED claim"| W["agent-worker ×20"]
-    W --> M[("case_memory<br/>VECTOR 1024")]
-    W --> B["Bedrock<br/>Claude Haiku"]
-    W --> A[("audit_log<br/>append-only")]
-    W --> V{"verdict"}
-    V -->|fraud / legit| DONE["closed automatically"]
-    V -->|escalate| H["human review queue"]
-    H --> A
-```
+<p align="center">
+  <img src="docs/images/readme-pipeline-flow.png" alt="Transaction flow: PaySim stream to scoring-api, medium-risk cases to the dispatcher and agent fleet, verdict closes the case or escalates to a human" width="900">
+</p>
 
 A cheap classifier sweeps every transaction. Only the ~2% it cannot clear reach the agent fleet. Each agent claims a case, **recalls similar past cases from shared memory**, reasons with Claude Haiku over a deterministic balance-reconciliation signal, and returns `fraud` / `legit` / `escalate` — writing an append-only audit row at every step.
 
@@ -68,59 +55,9 @@ See [docs/WORKFLOWS.md](docs/WORKFLOWS.md) for every situation.
 
 ## 2. Architecture
 
-```mermaid
-flowchart TD
-    subgraph EDGE["Edge"]
-        CF["CloudFront"] --> S3["S3 · static dashboard"]
-    end
-
-    subgraph CP["Control plane"]
-        API["dashboard-api Lambda<br/>reads + control endpoints"]
-    end
-
-    subgraph FLEET["Agent fleet · AWS Lambda"]
-        SCA["scoring-api"]
-        SCP["scoring-python<br/>XGBoost"]
-        DIS["dispatcher"]
-        AW["agent-worker ×N"]
-        REA["heartbeat-reaper<br/>every 30s"]
-        DEC["salience-decay<br/>every 6h"]
-    end
-
-    subgraph CRDB["CockroachDB Cloud · multi-region"]
-        T[("transactions")]
-        TK[("tasks · working memory")]
-        CM[("case_memory · episodic + VECTOR")]
-        AL[("audit_log · audit memory")]
-        MCP["MCP Server · 3 read-only tools"]
-    end
-
-    subgraph AI["Amazon Bedrock"]
-        HAIKU["Claude Haiku · reasoning"]
-        TITAN["Titan Embeddings v2 · 1024-dim"]
-    end
-
-    CF --> API
-    API --> TK
-    API --> CM
-    API --> AL
-    API -->|"enable/disable, invoke, rollback"| FLEET
-    SCA --> SCP
-    DIS --> TK
-    AW --> TK
-    AW --> CM
-    AW --> AL
-    AW --> MCP
-    AW --> HAIKU
-    AW --> TITAN
-    REA --> TK
-    DEC --> CM
-    EB["EventBridge schedules"] --> DIS
-    EB --> AW
-    EB --> REA
-    EB --> DEC
-    CW["CloudWatch · alarms + logs"] -.-> API
-```
+<p align="center">
+  <img src="docs/images/readme-architecture.png" alt="Full architecture: CloudFront and S3 at the edge, the dashboard-api control plane, the Lambda agent fleet, CockroachDB Cloud with four tables and the MCP server, and Amazon Bedrock" width="900">
+</p>
 
 Full detail: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). The **Architecture** page in the dashboard renders this same topology *from the live AWS inventory* — every node there is a real resource, not a drawing.
 
@@ -128,26 +65,9 @@ Full detail: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). The **Architecture*
 
 ## 3. Three tiers of memory (the heart of the project)
 
-```mermaid
-flowchart TB
-    subgraph WORK["Working memory — tasks"]
-        W1["status · claimed_by · heartbeat_at"]
-        W2["step + scratchpad JSONB<br/>→ resume after crash"]
-    end
-    subgraph EPI["Episodic memory — case_memory"]
-        E1["summary + verdict + pattern"]
-        E2["embedding VECTOR(1024)<br/>partial index WHERE archived = false"]
-        E3["salience · recall_count · merge_count"]
-    end
-    subgraph AUD["Audit memory — audit_log"]
-        A1["13 action types, append-only"]
-        A2["reasoning · similarity_scores · tokens · latency"]
-        A3["reviewer_id for human decisions"]
-    end
-    WORK -->|"case closes"| EPI
-    WORK --> AUD
-    EPI -->|"top-k recall feeds the next case"| WORK
-```
+<p align="center">
+  <img src="docs/images/readme-memory-tiers.png" alt="Three memory tiers: working memory in tasks, episodic memory in case_memory with a vector index, and append-only audit memory in audit_log, feeding back into working memory via top-k recall" width="420">
+</p>
 
 | Tier | Table | Job | Lifetime |
 |------|-------|-----|----------|
@@ -163,27 +83,9 @@ The episodic tier has two independent lifecycles — **construction** (summarise
 
 Not a dashboard that watches — a console that **operates**. Ten pages, bilingual (EN/VI), light/dark, every panel drag-resizable, everything reachable from `Ctrl+K`.
 
-```mermaid
-flowchart LR
-    subgraph OP["Operate"]
-        MC["Mission Control<br/>start/pause · dispatch · feed · agent policy"]
-        RQ["Review Queue<br/>approve · reject · bulk · send back to agent"]
-    end
-    subgraph OB["Observe"]
-        TX["Transactions<br/>decision trace · re-investigate · override"]
-        FM["Fleet & Memory<br/>pin · archive · delete · run decay"]
-        CO["Cost<br/>tokens + AWS spend + budget guardrail"]
-    end
-    subgraph PL["Platform"]
-        PI["Pipeline<br/>CI/CD state · rollback"]
-        DB["Database<br/>read-only SQL console · CSV export"]
-        AR["Architecture<br/>live topology, clickable"]
-        IN["Infrastructure<br/>nodes · inventory · chaos · multi-region"]
-    end
-    CMD["⌘K command palette<br/>navigate · act · search data"] --> OP
-    CMD --> OB
-    CMD --> PL
-```
+<p align="center">
+  <img src="docs/images/readme-control-platform.png" alt="Ten control-plane pages grouped into Operate, Observe and Platform, all reachable from the Ctrl+K command palette" width="750">
+</p>
 
 Highlights:
 
@@ -192,6 +94,7 @@ Highlights:
 - **Chaos button + recovery tracker.** Kill an agent and watch *killed → reaper re-queued (+Xs) → resumed from checkpoint (+Ys)*.
 - **Memory administration.** Pin a case so decay can never forget it, archive one out of the vector index, or run the decay job on demand.
 - **Guardrails that act.** A daily Bedrock cap that disables the fleet's schedules when crossed; a read-only SQL console that rejects every mutating statement server-side.
+- **Training Lab.** Run the memory experiment interactively: feed a batch, drain the queue, measure — memory formation, decision mix and cost, batch by batch, saved to CockroachDB for comparison. HiveMind does not fine-tune model weights (Bedrock doesn't allow it); what this page shows forming, honestly, is **episodic memory**.
 
 Full reference: [`docs/CONTROL_PLANE.md`](docs/CONTROL_PLANE.md) · API: [`docs/API.md`](docs/API.md).
 
@@ -199,23 +102,9 @@ Full reference: [`docs/CONTROL_PLANE.md`](docs/CONTROL_PLANE.md) · API: [`docs/
 
 ## 5. Resilience
 
-```mermaid
-sequenceDiagram
-    participant W as agent-worker
-    participant DB as CockroachDB
-    participant R as heartbeat-reaper
-    participant W2 as another worker
-
-    W->>DB: claim task (FOR UPDATE SKIP LOCKED)
-    W->>DB: checkpoint step + scratchpad
-    Note over W: 💥 crash mid-investigation
-    R->>DB: heartbeat stale > 30s → status = pending
-    R->>DB: audit: task_requeued
-    W2->>DB: claim the same task
-    W2->>DB: read scratchpad → resume at the same step
-    W2->>DB: audit: task_resumed
-    W2->>DB: verdict + audit
-```
+<p align="center">
+  <img src="docs/images/readme-resilience-sequence.png" alt="Crash-resume sequence: an agent-worker claims and checkpoints a task, crashes, the heartbeat-reaper requeues it after 30 seconds, and another worker resumes from the checkpoint instead of starting over" width="700">
+</p>
 
 | Failure | Mechanism | Guarantee |
 |---------|-----------|-----------|

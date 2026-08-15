@@ -14,7 +14,7 @@ On the labelled eval the `DRAIN` signature separates 34/34 fraud from 0/340 legi
 
 ## Consequences
 
-- **Correctness comes from design, not model size** — so the cheapest Bedrock model suffices (~$0.09/run), which is itself a production-readiness win.
+- **Correctness comes from design, not model size** — so the cheapest Bedrock model suffices ($0.00023/investigation), which is itself a production-readiness win.
 - The arithmetic is unit-testable in isolation (`test/integration/reasoning_test.go`, `internal/agent/reasoning_test.go`) — deterministic Go, no model call, no flakiness.
 - Generalisation risk: the signature is tuned to PaySim's fraud fingerprint. New fraud shapes need new signals — mitigated by the `escalate` path (uncertain cases go to humans, never silently mislabelled) and by the memory layer accumulating new patterns.
 - The `< 1.0` tolerances are a tuning knob; documented as such so a dataset change triggers a re-check.

@@ -6,19 +6,9 @@ fails the build if one appears.
 
 ## The delivery chain
 
-```mermaid
-flowchart LR
-    push["push to main"] --> CI["CI<br/>hermetic gates"]
-    push --> BP["Build and Push Images<br/>7 images to ECR at commit SHA"]
-    BP -->|on success| DS["Deploy Staging<br/>terraform apply at image_tag"]
-    DS -->|on success| SM["Smoke Test<br/>control plane, 30 checks"]
-    SM -->|on success| CN["Deploy Canary<br/>10% then alarm then 100% or rollback"]
-    push --> SEC["Security<br/>govulncheck, Trivy, gitleaks"]
-    dash["push to dashboard/**"] --> DD["Deploy Dashboard<br/>S3 + CloudFront"]
-
-    style CN fill:#fde68a,stroke:#d97706
-    style SM fill:#bbf7d0,stroke:#16a34a
-```
+<p align="center">
+  <img src="images/cicd-delivery-chain.png" alt="Delivery chain: push to main triggers CI, security scans and the build; a successful build stages, then smoke-tests, then canary-deploys; a push to dashboard deploys the dashboard" width="850">
+</p>
 
 The ordering matters and used to be wrong. Smoke Test and Deploy Canary both
 triggered on *Deploy Staging*, which meant they ran **in parallel** — traffic
@@ -46,27 +36,9 @@ the one whose images are in ECR.
 
 ## The canary
 
-```mermaid
-sequenceDiagram
-    participant W as Workflow
-    participant L as Lambda alias live
-    participant C as CloudWatch
-
-    W->>L: read live version (old) and newest published (new)
-    alt new equals old
-        W-->>W: nothing to shift, exit clean
-    else
-        W->>L: alias to old, 10% weighted to new
-        W->>W: wait 300s
-        W->>C: describe-alarms service-errors
-        alt alarm OK or INSUFFICIENT_DATA
-            W->>L: alias to new at 100%
-        else ALARM or alarm missing
-            W->>L: alias back to old at 100%
-            W-->>W: fail the job
-        end
-    end
-```
+<p align="center">
+  <img src="images/cicd-canary-sequence.png" alt="Canary sequence: the workflow shifts 10% of traffic to the new version, waits 5 minutes, checks the CloudWatch error alarm, then promotes to 100% or rolls back and fails the job" width="560">
+</p>
 
 Three details are deliberate:
 
@@ -119,7 +91,7 @@ superseding a read-only check costs nothing.
 
 ```bash
 make ci-local     # everything CI runs, on your machine
-make cicd         # just the 107 pipeline invariants
+make cicd         # just the pipeline invariants (100+; exact count printed at the end)
 make actionlint   # just the workflow linter
 make runs         # recent GitHub Actions results
 make why          # logs of the most recent failure

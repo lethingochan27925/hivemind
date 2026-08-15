@@ -15,7 +15,7 @@ Each capture lands in `evidence/<timestamp>[-label]/` with its own `INDEX.md` ex
 |------------------------------|---------------|----------------|
 | **100% fraud recall, 100% precision** | `verdict-vs-groundtruth.json` | Cross-tab of the agent's verdict against PaySim's `is_fraud_label`. Fraud rows must all carry verdict `fraud`; no `legit` row may carry label `true`. |
 | **~46% auto-resolved without a human** | `overview.json` | `verdicts_today`: `fraud + legit` over the total handled. |
-| **~$0.09 per run / cents per case** | `cost.json`, `cloud-cost.json` | Token spend per agent from `audit_log`, plus real AWS spend by service from Cost Explorer. |
+| **$0.00023 per investigation** | `cost.json`, `cloud-cost.json` | Token spend per agent from `audit_log`, plus real AWS spend by service from Cost Explorer. |
 | **Memory is consolidated, not dumped** | `memory-consolidation.json` | `raw_cases_absorbed` ≫ `consolidated_cases`: similar cases merged above the 0.92 threshold instead of inserting duplicates. |
 | **Memory is actually reused** | `memory-top-recalled.json`, `memory-hit-rate.json` | Non-zero `recall_count` per case, and the average hits per investigation. |
 | **Exactly-once investigation under 20 workers** | `no-double-claims.json` | Must be `0`. `SKIP LOCKED` + `UNIQUE(transaction_id)`. |

@@ -26,13 +26,13 @@ This folder is the **reference documentation** for HiveMind. The root [`README.m
 | | |
 |---|---|
 | **Go module** | `github.com/lethingochan27925/hivemind` |
-| **Primary region** | `ap-southeast-1` (Singapore); CockroachDB multi-region SGP / Jakarta / Mumbai |
+| **Primary region** | `ap-southeast-1` (Singapore). Multi-region (+ Sydney `ap-southeast-2`, + Mumbai `ap-south-1`, `SURVIVE REGION FAILURE`) is toggled on with `./scripts/multi-region.sh enable` — off by default to bound CockroachDB Cloud cost; see [`docs/DEPLOYMENT.md`](DEPLOYMENT.md) |
 | **Reasoning model** | Amazon Bedrock — Claude Haiku (`ap-southeast-1`) |
 | **Embedding model** | Amazon Bedrock — Titan Embeddings v2, 1024-dim (`us-east-1`) |
 | **Memory store** | CockroachDB Cloud — `transactions`, `tasks`, `case_memory` (VECTOR 1024), `audit_log` |
 | **Compute** | AWS Lambda (container images, Go) + EventBridge schedules |
 | **Control plane** | Next.js static export on S3 + CloudFront, backed by `dashboard-api` Lambda |
-| **Measured** | 100% recall & precision on the labelled eval · ~46% auto-resolved without a human · ~$0.09 per investigation run |
+| **Measured** | 100% recall & precision on the labelled eval · ~46% auto-resolved without a human · $0.00023 per investigation (≈ $0.11 per 500-case run) |
 | **Console** | 10 pages, bilingual EN/VI, light/dark, drag-resizable panels, ⌘K command palette |
 
 ## For hackathon judges — the 60-second path

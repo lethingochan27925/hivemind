@@ -45,7 +45,7 @@ Provisioning uses the **`ccloud` CLI** + Terraform (`scripts/init.sh`). All thre
 |-----------|----------|
 | **Agentic Memory Design** | Three memory tiers, each with its own access pattern and lifecycle; vector recall + consolidation (merge > 0.92) + salience decay. See [`docs/AGENTIC_MEMORY.md`](docs/AGENTIC_MEMORY.md). |
 | **Technical Implementation** | Real MCP integration, partial vector index, `SKIP LOCKED` coordination, SigV4-signed inter-Lambda calls, adaptive Bedrock retry. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). |
-| **Real-World Impact** | Measured on the labelled eval: **100% recall & precision** (34/34 fraud, 0/340 false positives), **~46%** auto-resolved without a human, **~$0.09** per run. Reproducible via [`test/`](test/). |
+| **Real-World Impact** | Measured on the labelled eval: **100% recall & precision** (34/34 fraud, 0/340 false positives), **~46%** auto-resolved without a human, **$0.00023 per investigation** (≈ $0.11 per 500-case run). Reproducible via [`test/`](test/). |
 | **Production Readiness** | Least-privilege IAM, secrets in SSM, prompt-injection defence, read-only DB console, crash/region resilience, CI/CD. See [`docs/SECURITY.md`](docs/SECURITY.md). |
 | **Creativity & Originality** | A deterministic categorical tool (`balanceSignal`) makes a *small* model correct — design, not model size. See [`docs/adr/0002`](docs/adr/0002-categorical-tool-for-small-llm.md). |
 
@@ -76,7 +76,7 @@ Full runbook: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 | `internal/memory` | Working / episodic / audit memory operations |
 | `pkg/{cockroach,bedrock,mcp}` | CockroachDB, Bedrock, and MCP clients |
 | `internal/dashboardapi` | Read endpoints + control plane |
-| `dashboard/` | Next.js control-plane UI (8 pages) |
+| `dashboard/` | Next.js control-plane UI (10 pages) |
 | `terraform/` | All infrastructure as code |
 | `docs/` | Reference documentation (architecture, memory, data model, API, security, ADRs) |
 | `test/` | Test plan, test cases, runnable tests |

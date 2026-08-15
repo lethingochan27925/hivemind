@@ -18,74 +18,15 @@ All state lives in **CockroachDB Cloud**; reasoning and embeddings come from **A
 
 ## End-to-end flow
 
-```mermaid
-flowchart TD
-    Stream["PaySim replay stream"] --> Scoring["scoring-api Lambda"]
-    Scoring -->|risk < 0.001| AutoApprove["auto-approve"]
-    Scoring -->|risk > 0.999| AutoBlock["auto-block"]
-    Scoring -->|"0.001 – 0.999 (medium)"| Dispatcher["dispatcher Lambda"]
-
-    Dispatcher -->|INSERT INTO tasks| Tasks
-
-    subgraph CRDB["CockroachDB Cloud — multi-region"]
-        Tasks["tasks · working memory · SKIP LOCKED"]
-        CaseMemory["case_memory · episodic · VECTOR(1024)"]
-        AuditLog["audit_log · append-only telemetry"]
-        MCP["MCP Server · 3 read-only tools"]
-    end
-
-    subgraph Fleet["Agent worker fleet ×N (Go/Lambda)"]
-        Claim["claim task"] --> Validate["sanitize input"]
-        Validate --> Recall["vector recall top-k"]
-        Recall --> Reason["Bedrock Claude Haiku"]
-        Reason --> Verdict{"verdict"}
-    end
-
-    Tasks -->|"claim FOR UPDATE SKIP LOCKED"| Claim
-    MCP -->|customer context| Recall
-    CaseMemory -->|similar cases| Recall
-    Reason -->|embed + consolidate| CaseMemory
-    Fleet -->|every step| AuditLog
-
-    Verdict -->|fraud / legit| Done["status = done"]
-    Verdict -->|escalate| Review["status = pending_review"]
-    Review --> Queue["Human review queue (dashboard)"]
-    Queue -->|approve / reject| AuditLog
-    Queue --> Done
-
-    Reaper["heartbeat-reaper · every 30s"] -->|re-queue stale| Tasks
-    Decay["salience-decay · every 6h"] -->|age + archive| CaseMemory
-
-    Tasks -.-> Dash["Mission Control dashboard"]
-    AuditLog -.-> Dash
-```
+<p align="center">
+  <img src="images/architecture-end-to-end-flow.png" alt="End-to-end flow: scoring routes transactions to auto-approve, auto-block or the dispatcher, the agent fleet claims tasks, recalls memory, reasons with Bedrock, and either closes the case or hands it to the human review queue" width="560">
+</p>
 
 ## The investigation lifecycle (one task)
 
-```mermaid
-sequenceDiagram
-    participant D as Dispatcher
-    participant DB as CockroachDB
-    participant W as Agent Worker
-    participant M as MCP Server
-    participant B as Bedrock
-
-    D->>DB: INSERT task (status=pending)
-    W->>DB: SELECT ... FOR UPDATE SKIP LOCKED → claim
-    Note over W,DB: status=claimed, claimed_by=agent, heartbeat_at=now()
-    W->>M: get_transaction / get_customer_context (read-only)
-    W->>DB: vector search case_memory (top-k similar)
-    W->>B: Claude Haiku — reason over balance signal + memory
-    B-->>W: {verdict, confidence, rationale}
-    W->>DB: write verdict + append audit_log rows
-    alt verdict = escalate
-        W->>DB: status = pending_review
-    else fraud / legit
-        W->>DB: status = done
-        W->>B: Titan embed summary (async construction)
-        W->>DB: consolidate into case_memory (merge > 0.92 else insert)
-    end
-```
+<p align="center">
+  <img src="images/architecture-investigation-lifecycle.png" alt="Sequence diagram: dispatcher inserts a task, the worker claims it, calls MCP and vector-searches memory, reasons with Claude Haiku, then writes the verdict and either escalates or embeds and consolidates the case into memory" width="700">
+</p>
 
 Each arrow that touches `audit_log` writes exactly one append-only row (`mcp_query`, `memory_recall`, `bedrock_reasoning`, `verdict_*`, …) with tokens and latency, so a single `SELECT ... WHERE task_id = $1 ORDER BY created_at` replays the entire decision.
 

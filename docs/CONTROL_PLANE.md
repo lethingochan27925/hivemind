@@ -2,33 +2,9 @@
 
 The dashboard is not a viewer. Every page can **change the running system**, and this document is the map of what can be changed, by whom, and what stops a mistake from becoming an incident.
 
-```mermaid
-flowchart TB
-    subgraph UI["Control platform (Next.js static site)"]
-        CMD["⌘K palette<br/>navigate · act · search"]
-        TOP["Topbar: fleet state · queue · alarms · spend"]
-        PAGES["10 pages"]
-    end
-
-    subgraph API["dashboard-api Lambda"]
-        READ["read endpoints"]
-        CTRL["control endpoints<br/>(token-gated)"]
-    end
-
-    subgraph TARGETS["What actually changes"]
-        EB["EventBridge rules<br/>start/pause · per-node schedule"]
-        LAM["Lambda<br/>invoke · alias rollback"]
-        DB[("CockroachDB<br/>tasks · case_memory · system_policy")]
-        CE["Cost Explorer<br/>(read)"]
-    end
-
-    UI --> API
-    READ --> DB
-    CTRL --> EB
-    CTRL --> LAM
-    CTRL --> DB
-    READ --> CE
-```
+<p align="center">
+  <img src="images/control-plane-overview.png" alt="Control-plane overview: the Next.js UI talks only to the dashboard-api Lambda, whose read endpoints serve CockroachDB and Cost Explorer, and whose token-gated control endpoints act on EventBridge, Lambda and CockroachDB" width="650">
+</p>
 
 ## The surfaces
 
@@ -56,6 +32,10 @@ flowchart TB
 ### Review Queue — human-in-the-loop, at scale
 
 Approve or reject one case, or select many and decide in bulk (`≤500` per call, reviewer name required — an anonymous mass approval is rejected). **Send back to agent** returns a case to the queue instead of forcing a human verdict. Every decision writes a `human_reviewed` audit row with the reviewer's name.
+
+### Training Lab — the memory experiment, interactive
+
+Feed a batch, drain the queue through the live fleet, measure — repeat. Each batch reports memory formation (active/archived memories, raw cases absorbed), decision mix (auto-resolved vs escalated) and cost, and every run is saved to CockroachDB for comparison. The server returns only cumulative snapshots; the browser diffs consecutive reads, so no session state lives outside the database and every number traces back to `audit_log`. **Honesty built in:** HiveMind does not fine-tune model weights — Bedrock doesn't expose that — so what this page measures forming, batch by batch, is episodic memory, not a retrained model.
 
 ### Transactions — act on a single case
 
@@ -87,19 +67,9 @@ One table for the fleet (state · alarm · schedule · version · memory · time
 
 ## Safety model
 
-```mermaid
-flowchart LR
-    REQ["request"] --> M{"method allowed?"}
-    M -->|no| R405["405"]
-    M -->|yes| T{"CONTROL_TOKEN set<br/>and header matches?"}
-    T -->|no| R403["403"]
-    T -->|yes| V{"input in allow-list?<br/>action · service · verdict · region · SQL"}
-    V -->|no| R400["400"]
-    V -->|yes| IAM{"IAM permits this exact ARN?"}
-    IAM -->|no| RERR["AWS denies"]
-    IAM -->|yes| DO["mutate"]
-    DO --> AUD["audit_log row"]
-```
+<p align="center">
+  <img src="images/control-plane-safety-model.png" alt="Safety model: request passes method check, control-token check, allow-list validation and IAM before it is allowed to mutate, and every mutation writes an audit_log row" width="850">
+</p>
 
 Four layers, in order:
 

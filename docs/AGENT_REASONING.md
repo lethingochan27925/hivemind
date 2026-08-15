@@ -49,20 +49,9 @@ The `< 1.0` tolerances absorb floating-point noise; the destination-credit check
 
 ## Decision flow
 
-```mermaid
-flowchart TD
-    Txn["transaction under investigation"] --> Sig["balanceSignal(txn) — computed in Go"]
-    Mem["top-k memory recall"] --> Prompt
-    Hist["customer history (MCP)"] --> Prompt
-    Sig --> Prompt["BuildPrompt()"]
-    Prompt --> Haiku["Claude Haiku (Bedrock)"]
-    Haiku --> JSON["{verdict, confidence, rationale}"]
-    JSON -->|fraud| Block["auto-block"]
-    JSON -->|legit| Approve["auto-approve"]
-    JSON -->|escalate| Human["human review queue"]
-    Haiku -.->|"invoke error / bad JSON"| FB["ruleBasedFallback()"]
-    FB -.-> JSON
-```
+<p align="center">
+  <img src="images/agent-reasoning-decision-flow.png" alt="Decision flow: the balance signal, memory recall and customer history feed the prompt to Claude Haiku, which returns a verdict, with a rule-based fallback if the model call fails" width="550">
+</p>
 
 ## Safety nets
 
@@ -78,6 +67,6 @@ flowchart TD
 | Recall / precision on labelled eval | 100% / 100% |
 | Auto-resolved without a human (fraud + legit) | ~46% |
 | Escalated to human review | remainder |
-| Cost per full investigation run (Haiku + Titan) | ~$0.09 |
+| Cost per investigation (Haiku + Titan) | $0.00023 ≈ $0.11 per 500-case run |
 
 Escalation is deliberately reserved for the `escalate` verdict — the case the *agent itself* flagged as uncertain — so humans are spent only where they add value, keeping the "reduces investigation time" promise honest. The methodology is reproducible: see [`test/`](../test/).

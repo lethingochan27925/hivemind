@@ -2,14 +2,9 @@
 
 Claims are cheap. This page is about the two tools that let anyone — including a judge with nothing but the demo URL — check whether the agent fleet does its job.
 
-```mermaid
-flowchart LR
-    G["cmd/gen-data<br/>deterministic labelled data"] --> DB[("CockroachDB<br/>transactions + labels")]
-    DB --> F["agent fleet"]
-    F --> A[("audit_log + tasks<br/>every decision, timing, cost")]
-    A --> E["cmd/eval<br/>read-only SQL over the control plane"]
-    E --> S["SCORECARD.md<br/>recall · precision · auto-resolve<br/>memory effect · resilience · cost"]
-```
+<p align="center">
+  <img src="images/evaluation-pipeline.png" alt="Evaluation pipeline: gen-data seeds labelled transactions, the fleet decides them, every decision lands in audit_log and tasks, and cmd/eval reads that through the control plane into SCORECARD.md" width="900">
+</p>
 
 ## 1. Data you can regenerate
 
