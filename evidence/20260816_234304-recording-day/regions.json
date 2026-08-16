@@ -1,0 +1,1 @@
+{"database":"hivemind","multi_region":true,"survival_goal":"region","regions":[{"region":"aws-ap-southeast-1","primary":true},{"region":"aws-ap-south-1","primary":false},{"region":"aws-ap-southeast-3","primary":false}]}

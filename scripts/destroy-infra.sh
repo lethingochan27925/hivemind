@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# AWS CLI v2 pipes any output it decides is "long enough" through `less` by
+# default when stdout is a terminal - `s3api head-bucket` in particular
+# started returning a small JSON body (BucketRegion, AccessPointAlias) on
+# success in a recent CLI version where it used to print nothing, and that
+# was enough to trigger the pager: every head-bucket call left `less`'s own
+# chrome (~ padding, (END)) bleeding into this script's output, looking like
+# a hang or a broken loop even though the script was working correctly.
+export AWS_PAGER=""
+
 TERRAFORM_DIR="terraform"
 
 log()  { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*"; }
@@ -49,7 +58,7 @@ source scripts/load-tf-vars.sh
 log "Emptying S3 buckets (Terraform cannot destroy non-empty buckets)"
 for bucket_suffix in dashboard evidence lambda-artifacts; do
   bucket_name="${PROJECT}-${ENVIRONMENT}-${bucket_suffix}"
-  if aws s3api head-bucket --bucket "$bucket_name" 2>/dev/null; then
+  if aws s3api head-bucket --bucket "$bucket_name" >/dev/null 2>&1; then
     aws s3 rm "s3://${bucket_name}" --recursive >/dev/null
     ok "  Emptied ${bucket_name}"
   else

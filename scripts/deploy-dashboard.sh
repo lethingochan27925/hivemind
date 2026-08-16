@@ -7,6 +7,8 @@
 # AWS API (distribution tim theo Comment), nen tao lai ha tang khong can sua
 # gi ca. Cuoi cung tu goi refresh-urls.sh de SUBMISSION.md luon dung URL.
 set -euo pipefail
+export AWS_PAGER="" # AWS CLI v2 pipes output through `less` by default when
+                     # stdout is a terminal - never useful in a script.
 cd "$(dirname "$0")/.."
 
 # Tu nap AWS credentials tu .env neu shell chua co (terminal moi khong can source truoc)

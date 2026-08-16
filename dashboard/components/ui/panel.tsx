@@ -128,10 +128,10 @@ export function Panel({
   const start = useRef({ y: 0, x: 0, h: 0, w: 0, axis: "y" as "y" | "xy" });
 
   const toggleCollapse = () => persist({ collapsed: !collapsed });
-  const resetSize = () => {
+  const resetSize = useCallback(() => {
     setDragSize(null);
     persist({ size: {} });
-  };
+  }, [persist]);
 
   // Esc closes the maximized overlay.
   useEffect(() => {
@@ -177,6 +177,51 @@ export function Panel({
     setDragSize(null);
   };
 
+  // Keyboard equivalent of dragging a grip - the WAI-ARIA "Window Splitter"
+  // pattern (w3.org/WAI/ARIA/apg/patterns/windowsplitter) is role="separator"
+  // + arrow keys on a focusable element; Home resets, matching double-click.
+  // Axis is read from the event target's data-axis, same as onGripDown, so
+  // this stays one stable handler shared by both grips instead of a
+  // per-grip closure built during render (refs must only be read inside an
+  // event handler or effect, never while a function is merely being
+  // constructed at render time).
+  const RESIZE_STEP = 24;
+  const onGripKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      const body = bodyRef.current;
+      const section = sectionRef.current;
+      if (!body || !section) return;
+      const axis = e.currentTarget.dataset.axis === "xy" ? "xy" : "y";
+      const curH = size.h ?? body.getBoundingClientRect().height;
+      const curW = size.w ?? section.getBoundingClientRect().width;
+      let next: Size | null = null;
+      switch (e.key) {
+        case "ArrowUp":
+          next = { h: Math.max(56, curH - RESIZE_STEP), w: axis === "xy" ? curW : size.w };
+          break;
+        case "ArrowDown":
+          next = { h: curH + RESIZE_STEP, w: axis === "xy" ? curW : size.w };
+          break;
+        case "ArrowLeft":
+          if (axis !== "xy") return;
+          next = { h: curH, w: Math.max(280, curW - RESIZE_STEP) };
+          break;
+        case "ArrowRight":
+          if (axis !== "xy") return;
+          next = { h: curH, w: curW + RESIZE_STEP };
+          break;
+        case "Home":
+          resetSize();
+          return;
+        default:
+          return;
+      }
+      e.preventDefault();
+      persist({ size: next });
+    },
+    [size, persist, resetSize]
+  );
+
   const iconBtn =
     "flex items-center justify-center w-6 h-6 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-panel-hover transition-colors";
 
@@ -188,6 +233,7 @@ export function Panel({
             onClick={toggleCollapse}
             className="text-text-tertiary hover:text-text-primary transition-colors self-center"
             title={collapsed ? t("Expand") : t("Collapse")}
+            aria-label={collapsed ? t("Expand") : t("Collapse")}
             aria-expanded={!collapsed}
           >
             {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
@@ -204,6 +250,7 @@ export function Panel({
           onClick={() => setMaximized(!maximized)}
           className={iconBtn}
           title={maximized ? t("Restore size") : t("Maximize")}
+          aria-label={maximized ? t("Restore size") : t("Maximize")}
         >
           {maximized ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
         </button>
@@ -252,8 +299,13 @@ export function Panel({
             onPointerMove={onGripMove}
             onPointerUp={onGripUp}
             onDoubleClick={resetSize}
+            onKeyDown={onGripKeyDown}
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label={t("Resize panel height")}
+            tabIndex={0}
             title={t("Drag to resize · double-click to reset")}
-            className="group absolute left-0 right-6 bottom-0 h-3 flex items-center justify-center cursor-ns-resize touch-none"
+            className="group absolute left-0 right-6 bottom-0 h-3 flex items-center justify-center cursor-ns-resize touch-none focus:outline-none focus-visible:ring-2 focus-visible:ring-blue/60"
           >
             <GripHorizontal
               size={14}
@@ -268,8 +320,12 @@ export function Panel({
             onPointerMove={onGripMove}
             onPointerUp={onGripUp}
             onDoubleClick={resetSize}
+            onKeyDown={onGripKeyDown}
+            role="separator"
+            aria-label={t("Resize panel height and width")}
+            tabIndex={0}
             title={t("Drag to resize · double-click to reset")}
-            className="group absolute right-0 bottom-0 w-4 h-4 cursor-nwse-resize touch-none"
+            className="group absolute right-0 bottom-0 w-4 h-4 cursor-nwse-resize touch-none focus:outline-none focus-visible:ring-2 focus-visible:ring-blue/60 rounded"
           >
             <span
               className={`absolute right-[3px] bottom-[3px] w-2 h-2 border-b-2 border-r-2 rounded-br transition-colors ${

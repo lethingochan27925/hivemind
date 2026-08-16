@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { api, PendingReview } from "@/lib/api";
 import { useLive } from "@/lib/use-live";
+import { useT } from "@/lib/i18n";
 import { Panel } from "@/components/ui/panel";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -13,6 +14,7 @@ const money = (n: number) =>
   n.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
 export default function ReviewsPage() {
+  const t = useT();
   const { data, error, lastUpdated } = useLive(api.getReviews, 8000);
 
   // Bo row khoi danh sach ngay lap tuc (danh sach live se dong bo o vong sau).
@@ -43,6 +45,13 @@ export default function ReviewsPage() {
   const bulk = async (kind: "approved" | "rejected" | "sendback") => {
     const ids = [...picked];
     if (ids.length === 0 || (kind !== "sendback" && !reviewerId.trim())) return;
+    // Every decision here is written to case_memory and shapes how the fleet
+    // reasons about every similar case from now on - worth one confirmation
+    // when it is about to happen to more than one case at once.
+    if (kind !== "sendback" && ids.length > 1 &&
+      !confirm(`${kind === "approved" ? "Approve" : "Reject"} ${ids.length} selected case(s) as ${reviewerId.trim()}? Each one is learned into the fleet's memory.`)) {
+      return;
+    }
     setBulkBusy(kind);
     setBulkMsg(null);
     try {
@@ -121,7 +130,7 @@ export default function ReviewsPage() {
         error={error}
         actions={
           <Badge variant={reviews.length > 0 ? "yellow" : "green"} dot>
-            {reviews.length} awaiting
+            {reviews.length} {t("awaiting")}
           </Badge>
         }
       />
@@ -134,15 +143,15 @@ export default function ReviewsPage() {
           actions={
             picked.size > 0 ? (
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-[12px] text-text-tertiary tnum mr-1">{picked.size} selected</span>
+                <span className="text-[12px] text-text-tertiary tnum mr-1">{picked.size} {t("selected")}</span>
                 <button
                   disabled={bulkBusy !== null || !reviewerId.trim()}
                   onClick={() => bulk("approved")}
                   className="flex items-center gap-1 px-2.5 py-1 rounded-md border border-green/30 bg-green/10 text-green text-[12px] font-semibold disabled:opacity-40 hover:bg-green/20 transition-colors"
-                  title={reviewerId.trim() ? "Approve all selected" : "Enter a reviewer name first"}
+                  title={reviewerId.trim() ? t("Approve all selected") : t("Enter a reviewer name first")}
                 >
                   {bulkBusy === "approved" ? <Loader2 size={12} className="animate-spin" /> : <CheckCheck size={12} />}
-                  Approve all
+                  {t("Approve all")}
                 </button>
                 <button
                   disabled={bulkBusy !== null || !reviewerId.trim()}
@@ -150,22 +159,22 @@ export default function ReviewsPage() {
                   className="flex items-center gap-1 px-2.5 py-1 rounded-md border border-red/30 bg-red/10 text-red text-[12px] font-semibold disabled:opacity-40 hover:bg-red/20 transition-colors"
                 >
                   {bulkBusy === "rejected" ? <Loader2 size={12} className="animate-spin" /> : <X size={12} />}
-                  Reject all
+                  {t("Reject all")}
                 </button>
                 <button
                   disabled={bulkBusy !== null}
                   onClick={() => bulk("sendback")}
                   className="flex items-center gap-1 px-2.5 py-1 rounded-md border border-blue/30 bg-blue/10 text-blue text-[12px] font-semibold disabled:opacity-40 hover:bg-blue/20 transition-colors"
-                  title="Send back to the agent instead of deciding manually"
+                  title={t("Send back to the agent instead of deciding manually")}
                 >
                   {bulkBusy === "sendback" ? <Loader2 size={12} className="animate-spin" /> : <CornerUpLeft size={12} />}
-                  Back to agent
+                  {t("Back to agent")}
                 </button>
                 <button
                   onClick={() => setPicked(new Set())}
                   className="px-2 py-1 rounded-md border border-border text-[12px] text-text-tertiary hover:text-text-primary transition-colors"
                 >
-                  clear
+                  {t("clear")}
                 </button>
               </div>
             ) : null
@@ -187,7 +196,7 @@ export default function ReviewsPage() {
                     <th className="py-2.5 pl-4 pr-1 font-normal w-8">
                       <input
                         type="checkbox"
-                        aria-label="Select all"
+                        aria-label={t("Select all")}
                         checked={picked.size > 0 && picked.size === reviews.length}
                         onChange={(e) =>
                           setPicked(e.target.checked ? new Set(reviews.map((r) => r.task_id)) : new Set())
@@ -195,12 +204,12 @@ export default function ReviewsPage() {
                         className="accent-[#7d9bf0]"
                       />
                     </th>
-                    <th className="py-2.5 px-4 font-normal">Task</th>
-                    <th className="py-2.5 px-4 font-normal">Type</th>
-                    <th className="py-2.5 px-4 font-normal text-right">Amount</th>
-                    <th className="py-2.5 px-4 font-normal text-right">Risk</th>
-                    <th className="py-2.5 px-4 font-normal">Agent verdict</th>
-                    <th className="py-2.5 px-4 font-normal text-right">Confidence</th>
+                    <th className="py-2.5 px-4 font-normal">{t("Task")}</th>
+                    <th className="py-2.5 px-4 font-normal">{t("Type")}</th>
+                    <th className="py-2.5 px-4 font-normal text-right">{t("Amount")}</th>
+                    <th className="py-2.5 px-4 font-normal text-right">{t("Risk")}</th>
+                    <th className="py-2.5 px-4 font-normal">{t("Agent verdict")}</th>
+                    <th className="py-2.5 px-4 font-normal text-right">{t("Confidence")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -268,7 +277,7 @@ export default function ReviewsPage() {
                 <User size={13} className="text-text-tertiary" />
                 <input
                   type="text"
-                  placeholder="Reviewer name"
+                  placeholder={t("Reviewer name")}
                   value={reviewerId}
                   onChange={(e) => setReviewerId(e.target.value)}
                   className="flex-1 bg-transparent py-2 text-[14px] text-text-primary placeholder:text-text-tertiary outline-none"
@@ -276,7 +285,7 @@ export default function ReviewsPage() {
               </label>
 
               <textarea
-                placeholder="Notes (optional) - recorded in the audit trail"
+                placeholder={t("Notes (optional) - recorded in the audit trail")}
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 rows={3}
@@ -292,7 +301,7 @@ export default function ReviewsPage() {
                   className="flex-1 flex items-center justify-center gap-1.5 bg-green/12 text-green border border-green/30 rounded-md py-2 text-[14px] font-medium disabled:opacity-40 hover:bg-green/20 transition-colors"
                 >
                   <Check size={14} />
-                  Approve
+                  {t("Approve")}
                 </button>
                 <button
                   onClick={() => decide("rejected")}
@@ -300,22 +309,22 @@ export default function ReviewsPage() {
                   className="flex-1 flex items-center justify-center gap-1.5 bg-red/12 text-red border border-red/30 rounded-md py-2 text-[14px] font-medium disabled:opacity-40 hover:bg-red/20 transition-colors"
                 >
                   <X size={14} />
-                  Reject
+                  {t("Reject")}
                 </button>
               </div>
               <button
                 onClick={sendBackOne}
                 disabled={submitting}
                 className="w-full flex items-center justify-center gap-1.5 bg-blue/12 text-blue border border-blue/30 rounded-md py-2 text-[14px] font-medium disabled:opacity-40 hover:bg-blue/20 transition-colors"
-                title="Return this case to the fleet instead of deciding it yourself"
+                title={t("Return this case to the fleet instead of deciding it yourself")}
               >
                 <CornerUpLeft size={14} />
-                Send back to agent
+                {t("Send back to agent")}
               </button>
 
               {!reviewerId.trim() && (
                 <p className="text-[12px] text-text-tertiary">
-                  Enter a reviewer name - it is written to the audit trail for compliance.
+                  {t("Enter a reviewer name - it is written to the audit trail for compliance.")}
                 </p>
               )}
             </div>
@@ -327,9 +336,10 @@ export default function ReviewsPage() {
 }
 
 function Field({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  const t = useT();
   return (
     <div className="flex flex-col">
-      <span className="text-text-tertiary">{label}</span>
+      <span className="text-text-tertiary">{t(label)}</span>
       <span className={`text-text-primary ${mono ? "tnum" : ""}`}>{value}</span>
     </div>
   );

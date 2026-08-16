@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export AWS_PAGER="" # AWS CLI v2 pipes output through `less` by default when
+                     # stdout is a terminal - never useful in a script.
 
 TERRAFORM_DIR="terraform"
 SKIP_BUILD_IMAGE=false
@@ -84,6 +86,20 @@ ok "AWS credentials valid"
 
 log "Loading remaining secrets from .env"
 source scripts/load-tf-vars.sh
+
+# README/docs/DEPLOYMENT.md have always described init.sh as loading the
+# schema - it never actually did (run_schema.py was only ever wired into
+# ci.yml's ephemeral test container). Best-effort, same pattern as ensure_jq/
+# ensure_gh above: never block the rest of setup on a missing Python
+# dependency, but never silently skip it either.
+log "Applying database schema and migrations"
+if command -v python3 >/dev/null 2>&1 && python3 -c "import psycopg2" >/dev/null 2>&1; then
+  python3 scripts/run_schema.py
+  ok "Schema and migrations applied"
+else
+  warn "python3 with psycopg2 not available - schema NOT applied automatically."
+  warn "Run manually before using the system: pip install psycopg2-binary && python3 scripts/run_schema.py"
+fi
 
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 REGION=$(aws configure get region 2>/dev/null || true)

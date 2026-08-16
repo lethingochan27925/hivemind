@@ -10,7 +10,7 @@ const barColor: Record<Tone, string> = {
 };
 
 /**
- * Meter — a horizontal proportion bar with a label and a right-aligned value.
+ * Meter - a horizontal proportion bar with a label and a right-aligned value.
  * Used for "X of Y" style figures (auto-resolve rate, precision, coverage).
  */
 export function Meter({

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export AWS_PAGER="" # AWS CLI v2 pipes output through `less` by default when
+                     # stdout is a terminal - never useful in a script.
 
 # -- Load .env ----------------------------------------------------------------
 ENV_FILE=".env"

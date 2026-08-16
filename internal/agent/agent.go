@@ -98,6 +98,14 @@ func (w *Worker) failTask(ctx context.Context, task *memory.Task, reason string)
 	}
 }
 
+// maxRetryCount bounds how many times a single task may be crash-resumed
+// before it is given up on. Without this, a "poison pill" task (one whose
+// input reliably crashes or hangs whatever worker picks it up) is requeued by
+// the heartbeat reaper forever: every ~30s another worker claims it, dies the
+// same way, and the reaper puts it right back — burning a Lambda invocation
+// each cycle with no operator visibility into the loop.
+const maxRetryCount = 5
+
 func (w *Worker) processTask(ctx context.Context, task *memory.Task) {
 	sp, err := ParseScratchpad(task.Scratchpad)
 	if err != nil {
@@ -108,6 +116,14 @@ func (w *Worker) processTask(ctx context.Context, task *memory.Task) {
 	if resuming {
 		fmt.Printf("  Resuming from step=%s (retry_count=%d)\n", *task.Step, sp.RetryCount)
 		sp.RetryCount++
+
+		if sp.RetryCount > maxRetryCount {
+			w.failTask(ctx, task, fmt.Sprintf(
+				"exceeded max retry count (%d) resuming at step=%s - likely a poison-pill input, needs manual investigation",
+				maxRetryCount, *task.Step))
+			return
+		}
+
 		// Ghi audit task_resumed: enum co san nhung truoc day khong noi nao ghi,
 		// khien cau chuyen crash -> requeue -> resume dut o buoc cuoi.
 		resumeNote := fmt.Sprintf("resumed at step=%s from scratchpad (retry #%d)", *task.Step, sp.RetryCount)
@@ -230,7 +246,10 @@ func (w *Worker) stepMemoryRecall(ctx context.Context, taskID string, txn *mcp.T
 	var memoryHits []memory.CaseMemoryHit
 
 	if resuming && sp.TopKCases != nil {
-		json.Unmarshal(sp.TopKCases, &memoryHits)
+		if err := json.Unmarshal(sp.TopKCases, &memoryHits); err != nil {
+			fmt.Printf("  [warn] corrupt scratchpad TopKCases, resuming with empty memory: %v\n", err)
+			memoryHits = nil
+		}
 		fmt.Printf("  Memory hits (resumed): %d\n", len(memoryHits))
 		return memoryHits
 	}
@@ -278,7 +297,10 @@ func (w *Worker) stepCustomerContext(ctx context.Context, taskID, transactionID 
 	var customerHistory []mcp.CustomerHistoryRow
 
 	if resuming && sp.MCPResult != nil {
-		json.Unmarshal(sp.MCPResult, &customerHistory)
+		if err := json.Unmarshal(sp.MCPResult, &customerHistory); err != nil {
+			fmt.Printf("  [warn] corrupt scratchpad MCPResult, resuming with empty history: %v\n", err)
+			customerHistory = nil
+		}
 		fmt.Printf("  Customer history (resumed): %d past transactions\n", len(customerHistory))
 		return customerHistory
 	}

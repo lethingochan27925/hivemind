@@ -44,6 +44,32 @@ resource "aws_lambda_function" "functions" {
   depends_on = [aws_cloudwatch_log_group.functions]
 }
 
+# Async invocations (EventBridge schedules, the dispatcher's fan-out to
+# agent-worker) that exhaust their retries land here instead of vanishing -
+# see modules/iam's async_dlq for why the execution role needs sqs:SendMessage
+# to make this actually deliver instead of failing invisibly a second time.
+#
+# Scoped to services NOT reachable via Function URL: on-failure destinations
+# only fire for asynchronous (Event) invocations, and every service in
+# function_url_services (scoring-api, scoring-python, dashboard-api) is
+# called synchronously (RequestResponse) over HTTP - wiring a DLQ there would
+# be a documented no-op that reads as a safety net which never catches
+# anything. The remaining services (agent-worker, dispatcher, reaper,
+# salience-decay) are only ever invoked by EventBridge or the dispatcher's
+# fan-out, both async.
+resource "aws_lambda_function_event_invoke_config" "async_failures" {
+  for_each = { for k, v in var.function_names : k => v if !contains(keys(var.function_url_services), k) }
+
+  function_name = aws_lambda_function.functions[each.key].function_name
+  qualifier     = aws_lambda_alias.live[each.key].name
+
+  destination_config {
+    on_failure {
+      destination = var.dlq_arn
+    }
+  }
+}
+
 resource "aws_lambda_alias" "live" {
   for_each = var.function_names
 

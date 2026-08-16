@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { Database, Play, Loader2, Table2, Download } from "lucide-react";
+import { useT } from "@/lib/i18n";
 
 const PRESETS: { label: string; sql: string }[] = [
   { label: "Verdict breakdown", sql: "SELECT verdict, COUNT(*) AS n FROM tasks WHERE verdict IS NOT NULL GROUP BY verdict ORDER BY n DESC" },
@@ -26,6 +27,7 @@ const TABLE_TONE: Record<string, "blue" | "green" | "purple" | "yellow"> = {
 };
 
 export default function DatabasePage() {
+  const t = useT();
   const { data, error, lastUpdated } = useLive(api.getDbStats, 10000);
   const presetSql = useQueryParam("sql");
   const [sql, setSql] = useState(PRESETS[0].sql);
@@ -75,7 +77,7 @@ export default function DatabasePage() {
 
   const fmt = (v: unknown) =>
     v === null || v === undefined
-      ? "—"
+      ? "-"
       : typeof v === "object"
         ? JSON.stringify(v)
         : String(v);
@@ -84,7 +86,7 @@ export default function DatabasePage() {
     <div>
       <PageHeader
         title="Database"
-        description="CockroachDB — the fleet's shared memory. Inspect tables and run read-only queries."
+        description="CockroachDB - the fleet's shared memory. Inspect tables and run read-only queries."
         lastUpdated={lastUpdated}
         error={error}
         actions={
@@ -98,21 +100,21 @@ export default function DatabasePage() {
 
       <div className="p-6 space-y-5 hm-enter">
         <div className="grid grid-cols-2 md:grid-cols-4 border border-border rounded-md divide-y md:divide-y-0 md:divide-x divide-border bg-bg-panel/40">
-          {(data?.tables ?? []).map((t) => (
+          {(data?.tables ?? []).map((tbl) => (
             <Stat
-              key={t.table}
-              label={t.table}
-              value={t.rows.toLocaleString()}
-              color={TABLE_TONE[t.table] ?? "default"}
+              key={tbl.table}
+              label={tbl.table}
+              value={tbl.rows.toLocaleString()}
+              color={TABLE_TONE[tbl.table] ?? "default"}
               icon={<Table2 size={13} />}
             />
           ))}
-          {!data && <Stat label="Loading…" value="—" />}
+          {!data && <Stat label="Loading…" value="-" />}
         </div>
 
         <Panel
           title="Query console"
-          subtitle="read-only — SELECT / SHOW / WITH"
+          subtitle="read-only - SELECT / SHOW / WITH"
           actions={<Database size={15} className="text-text-tertiary" />}
         >
           <div className="flex flex-wrap gap-2 mb-3">
@@ -123,7 +125,7 @@ export default function DatabasePage() {
                 disabled={running}
                 className="px-3 py-1.5 rounded-md border border-border text-[13px] text-text-secondary hover:text-text-primary hover:border-border-strong disabled:opacity-40 transition-colors"
               >
-                {p.label}
+                {t(p.label)}
               </button>
             ))}
           </div>
@@ -143,25 +145,25 @@ export default function DatabasePage() {
               className="flex items-center gap-2 px-4 py-2 rounded-md bg-blue/15 text-blue border border-blue/30 text-[14px] font-semibold hover:bg-blue/25 disabled:opacity-40 transition-colors"
             >
               {running ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />}
-              Run query
+              {t("Run query")}
             </button>
             {result && (
               <span className="text-[13px] text-text-tertiary tnum">
-                {result.row_count} rows{result.truncated ? " (truncated at 200)" : ""}
+                {result.row_count} {t("rows")}{result.truncated ? ` ${t("(truncated at 200)")}` : ""}
               </span>
             )}
             {result && result.rows.length > 0 && (
               <button
                 onClick={() => downloadCsv(result)}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-md border border-border text-[13px] text-text-secondary hover:text-text-primary hover:border-border-strong transition-colors"
-                title="Export these rows as CSV"
+                title={t("Export these rows as CSV")}
               >
                 <Download size={14} />
                 CSV
               </button>
             )}
             <span className="ml-auto text-[12px] text-text-tertiary">
-              Mutating statements are rejected server-side.
+              {t("Mutating statements are rejected server-side.")}
             </span>
           </div>
 

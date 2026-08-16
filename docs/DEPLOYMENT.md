@@ -35,8 +35,15 @@ The Lambdas read configuration from SSM at cold start (see `internal/config/conf
 What it does, in order:
 
 <p align="center">
-  <img src="images/deployment-init-flow.png" alt="init.sh sequence: terraform apply, docker build and push, publish and alias the Lambdas, create the schema, then seed PaySim data" width="900">
+  <img src="images/deployment-init-flow.png" alt="init.sh sequence: terraform apply, docker build and push, publish and alias the Lambdas, then create the schema" width="900">
 </p>
+
+The last box in that image ("seed PaySim + case_memory") is aspirational, not
+what `init.sh` actually does — seeding isn't idempotent the way schema
+creation is (re-running it would append more data every time), so it stays a
+separate, deliberate step: `make feed N=200`, the **Feed** button in Mission
+Control, or `python scripts/demo-stream.py --mode replay --limit 500`
+directly. `init.sh` itself hands you an empty, schema-ready system.
 
 > **The alias trap.** Lambdas are pinned to the `live` alias with `ignore_changes = [function_version]`. After every image push you must `aws lambda update-function-code … --publish` **then** `aws lambda update-alias … --function-version N` — Terraform alone will not move the alias. `init.sh` handles this; if you push a Lambda by hand, do both steps.
 
@@ -80,3 +87,4 @@ CockroachDB Cloud is torn down from its own console / `ccloud`. Set a **billing 
 | `UnrecognizedClientException` from Bedrock | Static creds without a session token | Use the default credential chain (`pkg/bedrock` does) |
 | High fallback rate under load | Bedrock throttling from a 20-worker burst | Adaptive retry (`RetryModeAdaptive`, 8 attempts) |
 | `500` on `/memory` when agents active | `TIMESTAMPTZ` scanned into a Go `string` | Scan into `time.Time` then format |
+| Billing alarm apply fails with `Invalid region ap-southeast-1 specified. Only us-east-1 is supported.` | Two layers: (1) `aws_cloudwatch_metric_alarm` doesn't reliably honour a non-default region yet in provider v6.60.0, whether via a provider alias or the native `region` argument; (2) even routed through the AWS CLI directly, the alarm's `alarm_actions` SNS topic must *also* live in us-east-1 - AWS reports that mismatch with the identical wording used for the alarm's own region, so the two failure modes read the same | `modules/monitoring/main.tf`'s billing alarm shells out to the AWS CLI (`null_resource` + `local-exec`) against its own us-east-1 SNS topic, not the shared ap-southeast-1 one the other alarms use - see the long comment on that resource for the full chase |

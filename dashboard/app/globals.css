@@ -27,10 +27,13 @@
   --color-orange: #dd7a3f;
   --color-teal: #2ba49b;
 
-  /* Text ramp */
+  /* Text ramp. tertiary was #8d92aa (~3.08:1 on white, fails WCAG AA's 4.5:1
+     for normal-size text - it is used for labels/hints/timestamps across
+     nearly every page, not just decorative captions). #6b7089 keeps the same
+     muted hue, ~4.88:1. */
   --color-text-primary: #22263b;
   --color-text-secondary: #575d78;
-  --color-text-tertiary: #8d92aa;
+  --color-text-tertiary: #6b7089;
 
   /* Component tokens */
   --node-shadow: 0 1px 2px rgba(35, 38, 59, 0.06), 0 4px 14px -6px rgba(35, 38, 59, 0.1);
@@ -59,9 +62,11 @@
   --color-orange: #f0aa78;
   --color-teal: #7fd4cb;
 
+  /* tertiary was #7c819b (~4.3:1 on the dark panel bg - just under AA).
+     #868bab is ~4.97:1, comfortably clear. */
   --color-text-primary: #eceef6;
   --color-text-secondary: #b0b5c8;
-  --color-text-tertiary: #7c819b;
+  --color-text-tertiary: #868bab;
 
   --node-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 2px 8px -2px rgba(0, 0, 0, 0.5);
 }

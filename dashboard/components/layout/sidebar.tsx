@@ -70,13 +70,32 @@ function writeWidth(w: number) {
   window.dispatchEvent(new Event("hm-sidebar-resize"));
 }
 
+// Below this the sidebar at its saved width (180-420px) can take over half a
+// phone-size viewport with no way to shrink it, since the resizable width was
+// only ever meant to be adjusted by dragging. Narrow viewports instead get a
+// fixed icon-only rail - no new open/close state to plumb through the
+// topbar, and every link stays one tap away instead of being hidden behind a
+// drawer trigger that would not exist without that extra state.
+const NARROW_QUERY = "(max-width: 767px)";
+const RAIL_W = 60;
+
+function subscribeNarrow(onChange: () => void) {
+  const mq = window.matchMedia(NARROW_QUERY);
+  mq.addEventListener("change", onChange);
+  return () => mq.removeEventListener("change", onChange);
+}
+function readNarrow(): boolean {
+  return window.matchMedia(NARROW_QUERY).matches;
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const t = useT();
 
   const stored = useSyncExternalStore(subscribeWidth, readWidth, () => DEFAULT_W);
+  const narrow = useSyncExternalStore(subscribeNarrow, readNarrow, () => false);
   const [dragWidth, setDragWidth] = useState<number | null>(null);
-  const sidebarWidth = dragWidth ?? stored;
+  const sidebarWidth = narrow ? RAIL_W : dragWidth ?? stored;
 
   // Handler duoc tao trong chinh luc keo: khong con phu thuoc vong giua onMove
   // va onUp, va tu don dep khi tha chuot.
@@ -102,38 +121,62 @@ export function Sidebar() {
 
   const dragging = dragWidth !== null;
 
+  // Every element the rail (narrow) drops relative to the full sidebar
+  // (wide) lives here, computed once and named for what it is, instead of
+  // as inline `{!narrow && (...)}` guards scattered through the JSX below -
+  // one place to scan for "what does narrow mode hide" instead of five, and
+  // one place a future wide-only addition is expected to join instead of
+  // inventing its own ad-hoc guard.
+  const resizeGrip = !narrow && (
+    <div
+      onPointerDown={onDown}
+      onDoubleClick={() => writeWidth(DEFAULT_W)}
+      title={t("Drag to resize · double-click to reset")}
+      className={`absolute top-0 right-0 w-1.5 h-full cursor-ew-resize touch-none transition-colors ${
+        dragging ? "bg-blue/60" : "hover:bg-blue/30"
+      }`}
+    />
+  );
+  const brandSubtitle = !narrow && (
+    <div className="leading-tight">
+      <div className="text-[17px] font-bold text-text-primary tracking-tight">HiveMind</div>
+      <div className="text-[10px] uppercase tracking-[0.16em] text-text-tertiary">
+        {t("Control Platform")}
+      </div>
+    </div>
+  );
+  const footer = !narrow && (
+    <div className="px-5 py-4 border-t border-border text-[12px] text-text-tertiary leading-relaxed">
+      <div className="flex items-center gap-2">
+        <span className="w-2 h-2 rounded-full bg-green" />
+        CockroachDB · Bedrock · Lambda
+      </div>
+      <div className="mt-1 opacity-70">{t("Agentic memory control plane")}</div>
+    </div>
+  );
+
   return (
     <aside
       style={{ width: sidebarWidth }}
       className="relative shrink-0 border-r border-border bg-bg-panel/60 flex flex-col"
     >
-      {/* Kéo cạnh phải để đổi bề rộng */}
-      <div
-        onPointerDown={onDown}
-        onDoubleClick={() => writeWidth(DEFAULT_W)}
-        title={t("Drag to resize · double-click to reset")}
-        className={`absolute top-0 right-0 w-1.5 h-full cursor-ew-resize touch-none transition-colors ${
-          dragging ? "bg-blue/60" : "hover:bg-blue/30"
-        }`}
-      />
-      <div className="h-16 flex items-center gap-3 px-5 border-b border-border">
-        <span className="w-8 h-8 rounded-lg bg-blue/15 border border-blue/30 flex items-center justify-center">
+      {/* Kéo cạnh phải để đổi bề rộng - vô hiệu khi ở rail hẹp */}
+      {resizeGrip}
+      <div className={`h-16 flex items-center gap-3 border-b border-border ${narrow ? "justify-center px-2" : "px-5"}`}>
+        <span className="w-8 h-8 rounded-lg bg-blue/15 border border-blue/30 flex items-center justify-center shrink-0">
           <span className="w-2.5 h-2.5 rounded-full bg-blue hm-pulse" />
         </span>
-        <div className="leading-tight">
-          <div className="text-[17px] font-bold text-text-primary tracking-tight">HiveMind</div>
-          <div className="text-[10px] uppercase tracking-[0.16em] text-text-tertiary">
-            {t("Control Platform")}
-          </div>
-        </div>
+        {brandSubtitle}
       </div>
 
       <nav className="flex-1 py-2 overflow-y-auto">
         {sections.map((section) => (
           <div key={section.label} className="mb-1">
-            <div className="px-5 pt-3 pb-1 text-[10px] uppercase tracking-[0.16em] text-text-tertiary font-bold">
-              {t(section.label)}
-            </div>
+            {!narrow && (
+              <div className="px-5 pt-3 pb-1 text-[10px] uppercase tracking-[0.16em] text-text-tertiary font-bold">
+                {t(section.label)}
+              </div>
+            )}
             {section.items.map((item) => {
               const isActive =
                 item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
@@ -142,7 +185,11 @@ export function Sidebar() {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`relative flex items-center gap-3 px-5 py-2 text-[14px] transition-colors ${
+                  title={narrow ? t(item.label) : undefined}
+                  aria-label={narrow ? t(item.label) : undefined}
+                  className={`relative flex items-center gap-3 py-2 text-[14px] transition-colors ${
+                    narrow ? "justify-center px-2" : "px-5"
+                  } ${
                     isActive
                       ? "text-text-primary bg-bg-panel-hover font-semibold"
                       : "text-text-secondary hover:text-text-primary hover:bg-bg-panel-hover/50"
@@ -152,7 +199,7 @@ export function Sidebar() {
                     <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-blue" />
                   )}
                   <Icon size={17} strokeWidth={1.8} />
-                  {t(item.label)}
+                  {!narrow && t(item.label)}
                 </Link>
               );
             })}
@@ -160,13 +207,7 @@ export function Sidebar() {
         ))}
       </nav>
 
-      <div className="px-5 py-4 border-t border-border text-[12px] text-text-tertiary leading-relaxed">
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-green" />
-          CockroachDB · Bedrock · Lambda
-        </div>
-        <div className="mt-1 opacity-70">{t("Agentic memory control plane")}</div>
-      </div>
+      {footer}
     </aside>
   );
 }

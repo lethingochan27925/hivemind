@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { DecisionTrace } from "@/components/control/decision-trace";
+import { useT } from "@/lib/i18n";
 import { RotateCcw, Gavel, Loader2 } from "lucide-react";
 
 const money = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 0 });
@@ -19,6 +20,7 @@ const verdictTone = (v?: string) =>
 const FILTERS = ["", "low", "medium", "high"];
 
 export default function TransactionsPage() {
+  const t = useT();
   const [txns, setTxns] = useState<Transaction[]>([]);
   // Deep-link tu global search: /transactions?id=<uuid>. Lua chon duoc SUY RA
   // tu URL + danh sach, khong copy vao state bang effect: `undefined` = nguoi
@@ -32,37 +34,52 @@ export default function TransactionsPage() {
   const [loading, setLoading] = useState(true);
   const [caseMsg, setCaseMsg] = useState<string | null>(null);
 
-  // Fetch on filter change. setLoading(true) lives in the filter button handler,
-  // not here - calling setState synchronously in an effect body triggers
-  // cascading renders (react-hooks/set-state-in-effect).
+  // Fetch on filter change, then poll every 8s like every other page in this
+  // console (this was the one page still asleep after the initial load - a
+  // new transaction never appeared here until the filter was touched or the
+  // page reloaded). setLoading(true) lives in the filter button handler, not
+  // here - calling setState synchronously in an effect body triggers
+  // cascading renders (react-hooks/set-state-in-effect). Paused while the tab
+  // is hidden, matching useLive's behaviour elsewhere.
   useEffect(() => {
     let alive = true;
-    api
-      .getTransactions(filter || undefined)
-      .then((t) => {
-        if (!alive) return;
-        setTxns(t ?? []);
-        setError(null);
-      })
-      .catch((e) => {
-        if (alive) setError(e.message);
-      })
-      .finally(() => {
-        if (alive) setLoading(false);
-      });
+    const load = () => {
+      if (document.hidden) return;
+      api
+        .getTransactions(filter || undefined)
+        .then((res) => {
+          if (!alive) return;
+          setTxns(res ?? []);
+          setError(null);
+        })
+        .catch((e) => {
+          if (alive) setError(e.message);
+        })
+        .finally(() => {
+          if (alive) setLoading(false);
+        });
+    };
+    load();
+    const timer = setInterval(load, 8000);
+    const onVisible = () => {
+      if (!document.hidden) load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       alive = false;
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [filter]);
 
   // Cap nhat lac quan: bang phai doi ngay khi thao tac thanh cong, khong cho
   // vong poll tiep theo (truoc day row van hien verdict cu vai giay).
   const applyLocalVerdict = (id: string, verdict?: string) => {
-    setTxns((prev) => prev.map((t) => (t.id === id ? { ...t, verdict } : t)));
+    setTxns((prev) => prev.map((tx) => (tx.id === id ? { ...tx, verdict } : tx)));
     setPick((prev) => (prev && prev.id === id ? { ...prev, verdict } : prev));
     api
       .getTransactions(filter || undefined)
-      .then((t) => setTxns(t ?? []))
+      .then((res) => setTxns(res ?? []))
       .catch(() => {});
   };
 
@@ -70,7 +87,7 @@ export default function TransactionsPage() {
     pick !== undefined
       ? pick
       : idParam
-        ? (txns.find((t) => t.id === idParam || t.id.startsWith(idParam)) ?? null)
+        ? (txns.find((tx) => tx.id === idParam || tx.id.startsWith(idParam)) ?? null)
         : null;
 
   const select = (tx: Transaction) => setPick(tx);
@@ -109,20 +126,20 @@ export default function TransactionsPage() {
         error={error}
         actions={
           <div className="flex gap-1">
-            {FILTERS.map((t) => (
+            {FILTERS.map((f) => (
               <button
-                key={t}
+                key={f}
                 onClick={() => {
-                  setFilter(t);
+                  setFilter(f);
                   setLoading(true);
                 }}
                 className={`px-2 py-1 text-[13px] rounded border capitalize transition-colors ${
-                  filter === t
+                  filter === f
                     ? "border-blue text-blue bg-blue/10"
                     : "border-border text-text-secondary hover:text-text-primary"
                 }`}
               >
-                {t || "all"}
+                {f || t("all")}
               </button>
             ))}
           </div>
@@ -145,11 +162,11 @@ export default function TransactionsPage() {
                 <thead className="sticky top-0 bg-bg-panel">
                   <tr className="text-left text-text-tertiary border-b border-border">
                     <th className="py-2.5 px-4 font-normal">ID</th>
-                    <th className="py-2.5 px-4 font-normal">Type</th>
-                    <th className="py-2.5 px-4 font-normal text-right">Amount</th>
-                    <th className="py-2.5 px-4 font-normal text-right">Risk</th>
-                    <th className="py-2.5 px-4 font-normal">Tier</th>
-                    <th className="py-2.5 px-4 font-normal">Verdict</th>
+                    <th className="py-2.5 px-4 font-normal">{t("Type")}</th>
+                    <th className="py-2.5 px-4 font-normal text-right">{t("Amount")}</th>
+                    <th className="py-2.5 px-4 font-normal text-right">{t("Risk")}</th>
+                    <th className="py-2.5 px-4 font-normal">{t("Tier")}</th>
+                    <th className="py-2.5 px-4 font-normal">{t("Verdict")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -239,6 +256,7 @@ function CaseActions({
   onDone: (msg: string) => void;
   onApplied: (id: string, verdict?: string) => void;
 }) {
+  const t = useT();
   const [busy, setBusy] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [who, setWho] = useState("");
@@ -268,21 +286,21 @@ function CaseActions({
             run("requeue", async () => {
               await api.requeueTask(txnId);
               onApplied(txnId, undefined);
-            }, "Case handed back to the fleet - it will be re-investigated.")
+            }, t("Case handed back to the fleet - it will be re-investigated."))
           }
           className={`${btn} border-blue/30 bg-blue/10 text-blue hover:bg-blue/20`}
-          title="Re-investigate: return this case to the queue"
+          title={t("Re-investigate: return this case to the queue")}
         >
           {busy === "requeue" ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
-          Re-investigate
+          {t("Re-investigate")}
         </button>
         <button
           onClick={() => setOpen(!open)}
           className={`${btn} border-border text-text-secondary hover:text-text-primary`}
-          title="Override the verdict"
+          title={t("Override the verdict")}
         >
           <Gavel size={12} />
-          Override
+          {t("Override")}
         </button>
       </div>
 
@@ -291,7 +309,7 @@ function CaseActions({
           <input
             value={who}
             onChange={(e) => setWho(e.target.value)}
-            placeholder="your name"
+            placeholder={t("your name")}
             className="w-28 bg-bg-inset border border-border rounded-md px-2 py-1 text-[12px] text-text-primary outline-none focus:border-blue"
           />
           {(["fraud", "legit"] as const).map((v) => (
@@ -302,7 +320,7 @@ function CaseActions({
                 run(v, async () => {
                   await api.overrideVerdict(txnId, v, who.trim());
                   onApplied(txnId, v);
-                }, `Verdict overridden to ${v} - recorded in the audit trail.`)
+                }, t("Verdict overridden to {v} - recorded in the audit trail.").replace("{v}", v))
               }
               className={`${btn} ${
                 v === "fraud"

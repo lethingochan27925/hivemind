@@ -80,7 +80,7 @@ function Tier({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-// Spine — the connector between tiers, with a downward-flowing pulse.
+// Spine - the connector between tiers, with a downward-flowing pulse.
 function Spine() {
   return (
     <div className="relative h-7 flex justify-center">
@@ -91,7 +91,7 @@ function Spine() {
 }
 
 /**
- * ArchitectureMap — a live, self-assembling system map. Nodes are generated from
+ * ArchitectureMap - a live, self-assembling system map. Nodes are generated from
  * the real deployed infrastructure (/control/lambdas, /control/db, /control/resources)
  * and grouped into architectural tiers; live state (Lambda health, DB row counts,
  * schedule/registry/observability counts) is overlaid. Not a static drawing.

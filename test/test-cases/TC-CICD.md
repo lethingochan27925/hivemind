@@ -4,7 +4,7 @@ Executed by `test/integration/pipeline_test.sh`, which runs in CI on every push
 (`ci.yml`, job *Pipeline invariants*) and locally via `make cicd`. Hermetic: no
 cloud account, no credentials, no network.
 
-**107 assertions, 0 failures. 12 of 12 mutation tests caught.**
+**109 assertions, 0 failures. 12 of 12 mutation tests caught.** (Run `bash test/integration/pipeline_test.sh` for the exact live count — it grows as the pipeline gains real coverage and this line is not guaranteed to be re-synced on every change; treat it as indicative, the script as ground truth.)
 
 ## Why this suite was rewritten
 
@@ -69,6 +69,7 @@ not presence.
 | CICD-44 | Terraform state is encrypted at rest | parse backend | `encrypt = true` |
 | CICD-45 | `.gitignore` blocks `.env`, `*.tfvars`, `*.tfstate` | pattern scan | all three |
 | CICD-46 | Every workflow is valid YAML | parse with PyYAML | all parse |
+| CICD-47 | Canary checks alarm history across the whole observation window, not just a final poll | pattern scan | `describe-alarm-history` present — an alarm that fires and clears again before the last check used to promote clean |
 
 ## Mutation testing
 

@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/joho/godotenv"
@@ -82,10 +83,9 @@ func getFromSSM(key string) (string, error) {
 		return "", err
 	}
 
-	withDecryption := true
 	out, err := client.GetParameter(context.Background(), &ssm.GetParameterInput{
-		Name:           strPtr(prefix + suffix),
-		WithDecryption: &withDecryption,
+		Name:           aws.String(prefix + suffix),
+		WithDecryption: aws.Bool(true),
 	})
 	if err != nil {
 		return "", fmt.Errorf("reading SSM parameter %s%s: %w", prefix, suffix, err)
@@ -94,23 +94,38 @@ func getFromSSM(key string) (string, error) {
 	return *out.Parameter.Value, nil
 }
 
-func strPtr(s string) *string { return &s }
-
 func Load() (*Config, error) {
 	_ = godotenv.Load(".env")
 
+	databaseURL, err := mustGetEnv("DATABASE_URL")
+	if err != nil {
+		return nil, err
+	}
+	titanModelID, err := mustGetEnv("TITAN_MODEL_ID")
+	if err != nil {
+		return nil, err
+	}
+	claudeModelID, err := mustGetEnv("CLAUDE_MODEL_ID")
+	if err != nil {
+		return nil, err
+	}
+	mcpEndpoint, err := mustGetEnv("COCKROACHDB_MCP_ENDPOINT")
+	if err != nil {
+		return nil, err
+	}
+
 	cfg := &Config{
-		DatabaseURL: mustGetEnv("DATABASE_URL"),
+		DatabaseURL: databaseURL,
 
 		AWSAccessKeyID:     getEnvDefault("AWS_ACCESS_KEY_ID", ""),
 		AWSSecretAccessKey: getEnvDefault("AWS_SECRET_ACCESS_KEY", ""),
 		AWSRegionBedrock:   getEnvDefault("AWS_REGION_BEDROCK", "ap-southeast-1"),
 		AWSRegionEmbed:     getEnvDefault("AWS_REGION_EMBED", "us-east-1"),
 
-		TitanModelID:  mustGetEnv("TITAN_MODEL_ID"),
-		ClaudeModelID: mustGetEnv("CLAUDE_MODEL_ID"),
+		TitanModelID:  titanModelID,
+		ClaudeModelID: claudeModelID,
 
-		MCPEndpoint:  mustGetEnv("COCKROACHDB_MCP_ENDPOINT"),
+		MCPEndpoint:  mcpEndpoint,
 		MCPAPIKey:    getEnvDefault("COCKROACHDB_MCP_API_KEY", ""),
 		MCPClusterID: getEnvDefault("COCKROACHDB_CLUSTER_ID", ""),
 		MCPDatabase:  getEnvDefault("COCKROACHDB_DATABASE", "hivemind"),
@@ -144,19 +159,22 @@ func Load() (*Config, error) {
 }
 
 // mustGetEnv doc tu bien moi truong truoc. Neu khong co va dang chay tren
-// Lambda that, thu doc tu SSM. Chi panic neu ca hai deu khong co gia tri.
-func mustGetEnv(key string) string {
+// Lambda that, thu doc tu SSM. Truoc day ham nay panic khi thieu ca hai -
+// khac voi moi loi cau hinh khac trong Load() (EMBED_DIM, MCP_TIMEOUT_SECONDS...)
+// deu di qua kenh (Config, error) binh thuong. Mot config con thieu khi cold
+// start gio tra loi ro rang thay vi lam sap Lambda bang panic khong bat duoc.
+func mustGetEnv(key string) (string, error) {
 	if val := os.Getenv(key); val != "" {
-		return val
+		return val, nil
 	}
 
 	if isRunningOnLambda() {
 		if val, err := getFromSSM(key); err == nil && val != "" {
-			return val
+			return val, nil
 		}
 	}
 
-	panic(fmt.Sprintf("required environment variable %s is not set (checked env and SSM)", key))
+	return "", fmt.Errorf("required environment variable %s is not set (checked env and SSM)", key)
 }
 
 func getEnvDefault(key, fallback string) string {

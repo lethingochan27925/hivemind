@@ -10,7 +10,6 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
-	cwtypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 )
 
 type ServiceHealth struct {
@@ -125,14 +124,16 @@ func (s *Server) queryIncidents(ctx context.Context) ([]IncidentEvent, error) {
 	return events, rows.Err()
 }
 
-var _ = cwtypes.StateValueOk
-
 // SimulateCrash de mo phong 1 task bi "crash" bang cach dat heartbeat_at
 // ve qua khu, de Heartbeat Reaper tu phat hien va re-queue o chu ky tiep theo.
 // Chi dung cho demo, khong phai hanh vi production that.
 func (s *Server) SimulateCrash(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !controlAllowed(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 	ctx := r.Context()

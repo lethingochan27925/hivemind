@@ -78,9 +78,10 @@ export function MemoryAdmin() {
           </button>
           <button
             disabled={busy !== null}
-            onClick={() =>
-              act("archive_below", () => api.memoryJob("archive_below", 0.3), "Archived every memory below salience 0.3.")
-            }
+            onClick={() => {
+              if (!confirm("Archive every live memory with salience below 0.3? They drop out of recall immediately.")) return;
+              act("archive_below", () => api.memoryJob("archive_below", 0.3), "Archived every memory below salience 0.3.");
+            }}
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-border text-[12px] text-text-secondary hover:text-text-primary disabled:opacity-40 transition-colors"
           >
             {busy === "archive_below" ? <Loader2 size={12} className="animate-spin" /> : <Layers size={12} />}
@@ -138,6 +139,7 @@ export function MemoryAdmin() {
                           onClick={() => act(`unpin-${m.id}`, () => api.memoryAction("unpin", m.id), "Unpinned.")}
                           className={iconBtn}
                           title="Unpin (salience back to 1.0)"
+                          aria-label="Unpin (salience back to 1.0)"
                         >
                           <PinOff size={13} />
                         </button>
@@ -147,6 +149,7 @@ export function MemoryAdmin() {
                           onClick={() => act(`pin-${m.id}`, () => api.memoryAction("pin", m.id), "Pinned - decay can no longer forget it.")}
                           className={iconBtn}
                           title="Pin (max salience)"
+                          aria-label="Pin (max salience)"
                         >
                           <Pin size={13} />
                         </button>
@@ -157,6 +160,7 @@ export function MemoryAdmin() {
                           onClick={() => act(`un-${m.id}`, () => api.memoryAction("unarchive", m.id), "Restored to the vector index.")}
                           className={iconBtn}
                           title="Restore into the vector index"
+                          aria-label="Restore into the vector index"
                         >
                           <ArchiveRestore size={13} />
                         </button>
@@ -166,6 +170,7 @@ export function MemoryAdmin() {
                           onClick={() => act(`ar-${m.id}`, () => api.memoryAction("archive", m.id), "Archived - excluded from recall.")}
                           className={iconBtn}
                           title="Archive (excluded from the partial vector index)"
+                          aria-label="Archive (excluded from the partial vector index)"
                         >
                           <Archive size={13} />
                         </button>
@@ -179,6 +184,7 @@ export function MemoryAdmin() {
                         }}
                         className={`${iconBtn} hover:text-red`}
                         title="Delete permanently"
+                        aria-label="Delete permanently"
                       >
                         <Trash2 size={13} />
                       </button>

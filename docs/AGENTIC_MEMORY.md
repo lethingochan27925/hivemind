@@ -82,11 +82,13 @@ consolidation pipeline:
 1. **Self-learned** — every case the agent decides is summarised, embedded and
    merged into `case_memory` (the ~34:1 distillation described above).
 2. **Human-taught** — when a reviewer decides an escalated case (Review Queue
-   approve/reject) or an operator overrides a verdict (Transactions page), that
-   decision is embedded and written into the same table with
-   `key_signals = ['human_reviewed']`, confidence 1.0, and **salience pinned at
-   2.0** — the ceiling salience decay cannot cross. The fleet can forget its own
-   inferences; it never forgets what a human taught it.
+   approve/reject, one at a time **or** in bulk — up to 500 decisions per call
+   teach the fleet exactly the same way a single decision does) or an operator
+   overrides a verdict (Transactions page), that decision is embedded and
+   written into the same table with `key_signals = ['human_reviewed']`,
+   confidence 1.0, and **salience pinned at 2.0** — the ceiling salience decay
+   cannot cross. The fleet can forget its own inferences; it never forgets
+   what a human taught it.
 
 The next investigation of a similar transaction recalls the human's decision
 through the exact same vector search as any other memory. Nothing about the

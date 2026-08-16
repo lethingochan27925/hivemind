@@ -1,7 +1,6 @@
 "use client";
 
-import { api } from "@/lib/api";
-import { useLive } from "@/lib/use-live";
+import { useCost } from "@/lib/use-cost";
 import { Panel } from "@/components/ui/panel";
 import { Stat } from "@/components/ui/stat";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -11,9 +10,11 @@ import { BudgetPanel } from "@/components/control/budget-panel";
 import { CloudCostPanel } from "@/components/control/cloud-cost-panel";
 import { BarList } from "@/components/charts/bar-list";
 import { Coins, DollarSign } from "lucide-react";
+import { useT } from "@/lib/i18n";
 
 export default function CostPage() {
-  const { data, error, loading, lastUpdated } = useLive(api.getCost, 10000);
+  const t = useT();
+  const { data, error, loading, lastUpdated } = useCost();
   const pending = loading && !data;
   const agents = data?.by_agent ?? [];
 
@@ -53,14 +54,14 @@ export default function CostPage() {
 
         {data?.price_source && (
           <p className="text-[12px] text-text-tertiary">
-            Unit price for {data.priced_model ?? "model"}: $
-            {(data.input_per_1k ?? 0).toFixed(5)}/1K in · $
-            {(data.output_per_1k ?? 0).toFixed(5)}/1K out —{" "}
+            {t("Unit price for {model}:").replace("{model}", data.priced_model ?? t("model"))} $
+            {(data.input_per_1k ?? 0).toFixed(5)}/1K {t("in")} · $
+            {(data.output_per_1k ?? 0).toFixed(5)}/1K {t("out")} -{" "}
             {data.price_source === "aws-pricing-api"
-              ? "fetched live from the AWS Pricing API"
+              ? t("fetched live from the AWS Pricing API")
               : data.price_source === "hybrid"
-                ? "input live from the AWS Pricing API · output from the published list price (the catalog has no output SKU for this model)"
-                : "published list price (AWS Pricing API has no matching SKU)"}
+                ? t("input live from the AWS Pricing API · output from the published list price (the catalog has no output SKU for this model)")
+                : t("published list price (AWS Pricing API has no matching SKU)")}
           </p>
         )}
 
@@ -85,10 +86,10 @@ export default function CostPage() {
                 <table className="w-full text-[14px]">
                   <thead>
                     <tr className="text-left text-text-tertiary border-b border-border bg-bg-inset/40">
-                      <th className="py-2.5 px-4 font-normal">Agent</th>
-                      <th className="py-2.5 px-4 font-normal text-right">Tokens in</th>
-                      <th className="py-2.5 px-4 font-normal text-right">Tokens out</th>
-                      <th className="py-2.5 px-4 font-normal text-right">Cost</th>
+                      <th className="py-2.5 px-4 font-normal">{t("Agent")}</th>
+                      <th className="py-2.5 px-4 font-normal text-right">{t("Tokens in")}</th>
+                      <th className="py-2.5 px-4 font-normal text-right">{t("Tokens out")}</th>
+                      <th className="py-2.5 px-4 font-normal text-right">{t("Cost")}</th>
                     </tr>
                   </thead>
                   <tbody>

@@ -476,6 +476,10 @@ func (s *Server) BulkReview(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !controlAllowed(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 	var body struct {
 		TaskIDs    []string `json:"task_ids"`
 		Decision   string   `json:"decision"`
@@ -500,15 +504,24 @@ func (s *Server) BulkReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	done, failed := 0, 0
+	done, failed, learned := 0, 0, 0
 	for _, id := range body.TaskIDs {
 		if err := review.SubmitReview(ctx, s.DB, id, body.ReviewerID, body.Decision, body.Notes); err != nil {
 			failed++
 			continue
 		}
 		done++
+		// Same human-in-the-loop hook as the single-review path (reviews.go
+		// DecideReview) - a bulk approve/reject is still a human decision and
+		// should teach the fleet the same way. Best-effort: a learning
+		// failure never turns a saved decision into a failed one.
+		if err := s.LearnFromReview(ctx, id, body.Decision, body.ReviewerID, body.Notes); err != nil {
+			log.Printf("learning from bulk review %s: %v", id, err)
+			continue
+		}
+		learned++
 	}
-	writeJSON(w, map[string]int{"decided": done, "failed": failed})
+	writeJSON(w, map[string]int{"decided": done, "failed": failed, "memory_learned": learned})
 }
 
 // --- Version rollback --------------------------------------------------------

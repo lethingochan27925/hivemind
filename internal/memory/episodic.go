@@ -51,13 +51,21 @@ func RetrieveCaseMemory(ctx context.Context, db *cockroach.Client, embeddingStr,
 	}
 
 	if len(ids) > 0 {
+		// Capped at recallSalienceCeiling, NOT pinnedSalience: a case recalled
+		// often enough would otherwise climb to exactly 2.0 through ordinary
+		// reuse (10 recalls at +0.1 each) with no human ever pinning it.
+		// DecaySalience (salience.go) excludes anything AT pinnedSalience from
+		// decay, on the assumption that only the explicit "pin" action
+		// (dashboardapi/ops.go's actOnMemory) reaches that exact value — an
+		// organically-popular memory hitting the same value by coincidence
+		// would become permanently un-decayable by accident.
 		_, err := db.Pool.Exec(ctx, `
 			UPDATE case_memory
-			SET salience = LEAST(salience + 0.1, 2.0),
+			SET salience = LEAST(salience + 0.1, $2),
 				recall_count = recall_count + 1,
 				last_recalled_at = now()
 			WHERE id = ANY($1::UUID[])
-		`, ids)
+		`, ids, recallSalienceCeiling)
 		if err != nil {
 			return nil, fmt.Errorf("updating salience after recall: %w", err)
 		}

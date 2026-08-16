@@ -14,6 +14,7 @@ Indexes worth noting:
 
 - `(risk_tier, arrived_at DESC)` — the dashboard's transaction feed filters by tier, newest first.
 - `(name_orig)` / `(name_dest)` — the MCP `get_customer_context` tool joins on `name_orig`; without this index that read is a full scan.
+- `USING GIN (name_orig gin_trgm_ops)` / `USING GIN (name_dest gin_trgm_ops)` (`migrations/002_trigram_search_indexes.sql`) — a plain B-tree only accelerates a prefix match, but the ⌘K global search (`internal/dashboardapi/search.go`) runs `ILIKE '%term%'`; CockroachDB's trigram index is the documented mechanism for substring `LIKE`/`ILIKE` ([Trigram Indexes](https://www.cockroachlabs.com/docs/stable/trigram-indexes)).
 - `type_check` / `tier_check` constraints — only `TRANSFER`/`CASH_OUT` (the two PaySim types that ever contain fraud) and `low|medium|high` are storable, so bad data can't enter.
 
 ## `tasks` — working memory
@@ -60,15 +61,17 @@ The two lifecycles are covered in depth in [Agentic Memory](AGENTIC_MEMORY.md): 
 
 ## `audit_log` — audit memory (append-only)
 
-Every step every agent takes, forever. Thirteen `action` values span the full trajectory:
+Every step every agent takes, forever. Fourteen `action` values span the full trajectory:
 
 ```
 mcp_query · memory_recall · bedrock_reasoning
 verdict_fraud · verdict_legit · verdict_escalate
 auto_approve · auto_block
 task_claimed · task_resumed · task_failed · task_requeued
-human_reviewed
+human_reviewed · human_lesson_stored
 ```
+
+The last one is deliberately separate from `human_reviewed`: `human_reviewed` marks the review *decision* (written by the review-decision handlers themselves), `human_lesson_stored` marks that the decision was successfully embedded and pinned into `case_memory` (`internal/dashboardapi/learn.go`) — added in [migration 003](../migrations/003_human_lesson_audit_action.sql) after every insert of that action silently failed `action_ck` since the human-in-the-loop feature was first written (the `case_memory` write itself was never affected — only this secondary audit marker).
 
 Each row carries `reasoning` (natural-language, for compliance), `memory_hits`, `similarity_scores[]`, `tokens_in`/`tokens_out`, `bedrock_model`, and `latency_ms`. Token counts come straight from Bedrock's response body — writing them is mandatory, and `bedrock_model` is only stamped on rows where a model was actually invoked (audit honesty).
 

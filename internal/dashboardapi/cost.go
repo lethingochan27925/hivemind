@@ -11,30 +11,37 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"sync"
+	"time"
 
+	"github.com/lethingochan27925/hivemind/internal/budget"
+	"github.com/lethingochan27925/hivemind/internal/cache"
 	"github.com/lethingochan27925/hivemind/internal/config"
 	"github.com/lethingochan27925/hivemind/internal/pricing"
 )
 
 // Gia fallback tinh - chi con dung cho estimateCost(), giu lai de cac bai test
 // hermetic (cloudcost_test) khong phu thuoc mang. Duong nong dung livePrices.
+// Alias thang toi internal/budget - noi duy nhat khai bao con so gia - de
+// khong the co hai gia Bedrock khac nhau lech nhau giua ngan sach va dashboard.
 const (
-	claudeInputCostPer1K  = 0.00025
-	claudeOutputCostPer1K = 0.00125
+	claudeInputCostPer1K  = budget.ClaudeInputCostPer1K
+	claudeOutputCostPer1K = budget.ClaudeOutputCostPer1K
 )
 
 // Config nap mot lan cho ca doi container - moi lan Load() la nhieu round-trip
 // SSM, khong co ly do tra gia do tren tung request.
-var (
-	cfgOnce   sync.Once
-	cfgCached *config.Config
-	cfgErr    error
-)
+//
+// cache.Forever: chi cache KHI THANH CONG (cache.TTL khong bao gio ghi mot
+// loi vao cache - xem doc cua no), nen mot that bai tam thoi (vi du SSM
+// eventually-consistent luc cold start) khong bi dong bang mai mai nhu
+// sync.Once tung lam - request sau tu hoi phuc ngay khi dieu kien het.
+var cfgCache = cache.NewTTL[*config.Config](cache.Forever)
 
 func loadCfgOnce() (*config.Config, error) {
-	cfgOnce.Do(func() { cfgCached, cfgErr = config.Load() })
-	return cfgCached, cfgErr
+	return cfgCache.Get(func() (*config.Config, time.Duration, error) {
+		cfg, err := config.Load()
+		return cfg, 0, err
+	})
 }
 
 // livePrices: don gia hien hanh cho model dang chay. Moi that bai (config,
@@ -122,9 +129,8 @@ func (s *Server) GetCost(w http.ResponseWriter, r *http.Request) {
 }
 
 // estimateCost: duong fallback tinh, giu cho test hermetic va lam gia chot
-// khi livePrices khong dung duoc. Nguon gia song la internal/pricing.
+// khi livePrices khong dung duoc. Nguon gia song la internal/pricing; nguon
+// gia tinh la internal/budget (tinh toan thuc su cung nam o do).
 func estimateCost(tokensIn, tokensOut int) float64 {
-	inCost := float64(tokensIn) / 1000.0 * claudeInputCostPer1K
-	outCost := float64(tokensOut) / 1000.0 * claudeOutputCostPer1K
-	return inCost + outCost
+	return budget.EstimateCost(tokensIn, tokensOut)
 }

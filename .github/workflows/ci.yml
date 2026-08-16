@@ -62,6 +62,71 @@ jobs:
       - name: Test
         run: go test ./... -count=1
 
+  go-integration:
+    name: Go integration tests (CockroachDB)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # A GitHub Actions `services:` container cannot be given a custom
+      # command (cockroachdb/cockroach's image needs `start-single-node
+      # --insecure` to run as a dev cluster), so this runs it as an ordinary
+      # docker container instead — the pattern CockroachDB's own docs use for
+      # "Start a Cluster in Docker". Pinned to v24.3, the first LTS line with
+      # vector search GA'd (CREATE VECTOR INDEX in migrations/001_init.sql
+      # needs it) — bump this if a newer LTS is what CockroachDB Cloud runs.
+      - name: Start CockroachDB
+        run: |
+          docker run -d --name crdb -p 26257:26257 -p 8080:8080 \
+            cockroachdb/cockroach:v24.3.8 start-single-node --insecure
+          for i in $(seq 1 30); do
+            if docker exec crdb cockroach sql --insecure -e "SELECT 1" >/dev/null 2>&1; then
+              echo "CockroachDB is ready"
+              break
+            fi
+            if [ "$i" = 30 ]; then
+              echo "::error::CockroachDB never became ready"
+              docker logs crdb
+              exit 1
+            fi
+            sleep 2
+          done
+
+      - name: Install psycopg2 (run_schema.py)
+        run: pip install --no-cache-dir psycopg2-binary
+
+      - name: Apply schema
+        env:
+          DATABASE_URL: postgresql://root@localhost:26257/defaultdb?sslmode=disable
+        run: python scripts/run_schema.py
+
+      # This is the whole point of the job: internal/memory's crash-recovery
+      # and concurrency tests (working_integration_test.go,
+      # concurrency_integration_test.go, salience_integration_test.go) carry
+      # `//go:build integration` and are invisible to the hermetic `go` job
+      # above — without a real database behind them, "0 double-claims under
+      # 20 workers" and "a pinned memory survives decay" were asserted in
+      # prose and evidence snapshots, never actually re-checked on every push.
+      - name: Integration tests
+        env:
+          DATABASE_URL: postgresql://root@localhost:26257/hivemind?sslmode=disable
+        run: go test -tags integration ./... -count=1
+
+      - name: Stop CockroachDB
+        if: always()
+        run: docker rm -f crdb
+
   dashboard:
     name: Dashboard lint and build
     runs-on: ubuntu-latest

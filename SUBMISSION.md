@@ -2,8 +2,8 @@
 
 **Hackathon:** CockroachDB × AWS — Build with Agentic Memory
 **Repository:** https://github.com/lethingochan27925/hivemind (public, Apache 2.0)
-**Live dashboard:** https://d3hfe5ggacbomx.cloudfront.net
-**Demo video (< 3 min):** _<YouTube/Vimeo link>_
+**Live dashboard:** https://d3j7q4yqifjmc1.cloudfront.net
+**Demo video (< 3 min):** _<YouTube/Vimeo link>_ — recorded from [`VIDEO_SCRIPT.md`](VIDEO_SCRIPT.md)
 
 ## One-line pitch
 
@@ -19,7 +19,7 @@ A stream of payment transactions is scored; the ~2% the classifier can't clear a
 
 | CockroachDB capability | Where it's used | What it does |
 |------------------------|-----------------|--------------|
-| **Managed MCP Server** | `pkg/mcp` — the agent's `get_transaction`, `get_customer_context`, `search_similar_cases` tools | The agent explores customer data through a **read-only** protocol surface (SELECT only). It cannot mutate state while investigating — least-privilege at the protocol layer. |
+| **Managed MCP Server** | `pkg/mcp` — the agent calls `get_transaction` and `get_customer_context` on every investigation; a third tool, `search_similar_cases`, is implemented and tested but not on the live investigation path (episodic recall goes through the vector index directly — see the row below) | The agent explores customer data through a **read-only** protocol surface (SELECT only). It cannot mutate state while investigating — least-privilege at the protocol layer. |
 | **Distributed Vector Indexing** | `case_memory.embedding VECTOR(1024)`, `VECTOR INDEX … vector_l2_ops WHERE archived = false` | Powers episodic recall: an agent embeds the current alert (Titan) and retrieves the top-k most similar past cases. The index is **partial on live memories**, so salience-based forgetting shrinks the search space. |
 | **Multi-region, strongly-consistent SQL** | `tasks` (working memory), `audit_log` (audit) | `SELECT … FOR UPDATE SKIP LOCKED` coordinates 20+ agents with no broker; `UNIQUE(transaction_id)` guarantees exactly-once investigation; foreign-keyed append-only audit survives a region loss with **RPO = 0**. |
 
@@ -43,10 +43,10 @@ Provisioning uses the **`ccloud` CLI** + Terraform (`scripts/init.sh`). All thre
 
 | Criterion | Evidence |
 |-----------|----------|
-| **Agentic Memory Design** | Three memory tiers, each with its own access pattern and lifecycle; vector recall + consolidation (merge > 0.92) + salience decay. See [`docs/AGENTIC_MEMORY.md`](docs/AGENTIC_MEMORY.md). |
+| **Agentic Memory Design** | Three memory tiers, each with its own access pattern and lifecycle; vector recall + consolidation (merge > 0.92) + salience decay. Two teachers write into the same episodic table through the same pipeline: the fleet's own inferences, and a human reviewer's decision (single or bulk, up to 500 at once) — pinned at salience 2.0, immune to decay. See [`docs/AGENTIC_MEMORY.md`](docs/AGENTIC_MEMORY.md). |
 | **Technical Implementation** | Real MCP integration, partial vector index, `SKIP LOCKED` coordination, SigV4-signed inter-Lambda calls, adaptive Bedrock retry. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). |
 | **Real-World Impact** | Measured on the labelled eval: **100% recall & precision** (34/34 fraud, 0/340 false positives), **~46%** auto-resolved without a human, **$0.00023 per investigation** (≈ $0.11 per 500-case run). Reproducible via [`test/`](test/). |
-| **Production Readiness** | Least-privilege IAM, secrets in SSM, prompt-injection defence, read-only DB console, crash/region resilience, CI/CD. See [`docs/SECURITY.md`](docs/SECURITY.md). |
+| **Production Readiness** | Least-privilege IAM, secrets in SSM, prompt-injection defence (extended to reviewer-supplied text, not just the external transaction feed), SQL-injection defence at the MCP tool layer (allow-listed enums, UUID validation, escaping — the protocol has no bind parameters), read-only DB console, crash/region resilience, a dead-letter queue so a failed async invocation is never silently lost, a live (not hardcoded) Bedrock unit price with an honest fallback label, and CI/CD with a canary that checks its whole observation window, not just the final poll. See [`docs/SECURITY.md`](docs/SECURITY.md). |
 | **Creativity & Originality** | A deterministic categorical tool (`balanceSignal`) makes a *small* model correct — design, not model size. See [`docs/adr/0002`](docs/adr/0002-categorical-tool-for-small-llm.md). |
 
 ## Reproduce it

@@ -95,6 +95,30 @@ variable "agent_worker_reserved_concurrency" {
   default     = 20
 }
 
+# dispatcher/reaper/salience-decay chay dinh ky qua EventBridge. Voi
+# reserved_concurrency=1 hardcode, neu 1 chu ky chay lau hon khoang cach lich
+# (DB cham, tai cao) thi lan invoke ke tiep bi throttle ngay luc he thong can
+# no nhat. 2 cho mot khoang dem: chu ky truoc chua xong van khong chan chu ky
+# sau. Van gioi han (khong -1) vi day la job dang "mot ban ghi tai mot thoi
+# diem", khong phai fleet co the scale ngang vo han.
+variable "dispatcher_reserved_concurrency" {
+  description = "Concurrency toi da cua dispatcher"
+  type        = number
+  default     = 2
+}
+
+variable "reaper_reserved_concurrency" {
+  description = "Concurrency toi da cua heartbeat-reaper"
+  type        = number
+  default     = 2
+}
+
+variable "salience_decay_reserved_concurrency" {
+  description = "Concurrency toi da cua salience-decay"
+  type        = number
+  default     = 2
+}
+
 variable "scoring_api_timeout_seconds" {
   type    = number
   default = 60
@@ -301,6 +325,37 @@ variable "cockroachdb_mcp_api_key" {
   description = "API key cua CockroachDB Managed MCP Server"
   type        = string
   sensitive   = true
+}
+
+# controlAllowed() (internal/dashboardapi/control.go) reads CONTROL_TOKEN
+# straight from the Lambda environment and requires a matching X-Control-Token
+# header on every mutating /control/* and /reviews/* request. dashboard-api's
+# Function URL is public (auth = NONE, main.tf), so leaving this unset is not
+# a neutral default - it means every rollback/region/memory/review mutation on
+# the deployed console is open to the internet. Empty default only so a fresh
+# `terraform apply` does not hard-fail before the user has picked a value;
+# docs/DEPLOYMENT.md and .env.example both call out that a real deployment
+# must set this.
+variable "control_token" {
+  description = "Shared secret required in X-Control-Token for mutating dashboard-api endpoints. REQUIRED for any deployment reachable outside a private demo - see docs/SECURITY.md."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+# Optional: raises the Pipeline page's GitHub Actions proxy (/control/pipeline,
+# internal/dashboardapi/pipeline.go) from GitHub's unauthenticated rate limit
+# (60 req/hour, shared by every viewer through this one Lambda) to the
+# authenticated one (5,000 req/hour). A fine-grained PAT with only
+# "Actions: Read" on this one repository is enough - see
+# https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api.
+# Left empty, the proxy still works unauthenticated; it just shares the
+# smaller budget.
+variable "github_token" {
+  description = "Optional GitHub PAT (Actions:Read) to raise the Pipeline page's GitHub API rate limit from 60/hour to 5,000/hour"
+  type        = string
+  sensitive   = true
+  default     = ""
 }
 
 variable "cockroachdb_cluster_id" {

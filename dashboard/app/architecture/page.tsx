@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { ArchitectureMap } from "@/components/control/architecture-map";
+import { useT } from "@/lib/i18n";
 
 const SERVICE_LABEL: Record<string, string> = {
   lambda: "Lambda functions",
@@ -23,6 +24,7 @@ const SERVICE_LABEL: Record<string, string> = {
 };
 
 export default function ArchitecturePage() {
+  const t = useT();
   const { data, error, lastUpdated } = useLive(api.getResources, 60000);
   const resources = data ?? [];
 
@@ -63,7 +65,7 @@ export default function ArchitecturePage() {
                 <div key={svc} className="rounded-lg border border-border bg-bg-inset/40 overflow-hidden">
                   <div className="flex items-center justify-between px-3.5 h-10 border-b border-border bg-bg-inset/60">
                     <span className="text-[13px] font-semibold text-text-primary">
-                      {SERVICE_LABEL[svc] ?? svc}
+                      {t(SERVICE_LABEL[svc] ?? svc)}
                     </span>
                     <span className="tnum text-[13px] text-text-tertiary">{grouped[svc].length}</span>
                   </div>

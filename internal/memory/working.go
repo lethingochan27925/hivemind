@@ -55,6 +55,21 @@ func ClaimNextTask(ctx context.Context, db *cockroach.Client, workerID string) (
 		return nil, fmt.Errorf("marking task claimed: %w", err)
 	}
 
+	// task_claimed is a real value in audit_log's action CHECK constraint but
+	// nothing ever wrote it - every concurrency/evidence query that counts
+	// "distinct agents that claimed work" (scripts/capture-evidence.sh,
+	// evidence/README.md's fleet-distinct-agents.json) filters on this exact
+	// action and silently read 0 forever. Written inside the same transaction
+	// as the claim itself so the two can never disagree: either both land, or
+	// neither does.
+	_, err = tx.Exec(ctx, `
+		INSERT INTO audit_log (task_id, transaction_id, agent_id, action, created_at)
+		VALUES ($1, $2, $3, 'task_claimed', now())
+	`, task.ID, task.TransactionID, workerID)
+	if err != nil {
+		return nil, fmt.Errorf("recording claim audit: %w", err)
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("committing claim: %w", err)
 	}

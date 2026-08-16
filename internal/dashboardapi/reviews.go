@@ -39,6 +39,10 @@ func (s *Server) DecideReview(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !controlAllowed(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 
 	var req decideRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

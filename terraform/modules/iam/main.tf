@@ -100,6 +100,21 @@ resource "aws_ssm_parameter" "scoring_python_endpoint" {
 }
 
 # =============================================================================
+# Dead-letter queue for async invocations
+# =============================================================================
+# EventBridge and the dispatcher's fan-out (InvocationTypeEvent) both invoke
+# Lambda asynchronously. An async invoke that exhausts its retries used to
+# just vanish - no DLQ, no destination, nothing in any log to say a task's
+# worker invocation failed outright rather than the worker itself returning
+# an error. One shared queue for every function: cheap, and destinations
+# don't need per-function isolation the way execution roles do.
+resource "aws_sqs_queue" "async_dlq" {
+  name                      = "${var.project}-${var.environment}-lambda-dlq"
+  message_retention_seconds = 1209600 # 14 days (max) - a failure sits here until someone looks, not until it expires unnoticed
+  tags                      = local.common_tags
+}
+
+# =============================================================================
 # Lambda execution roles -- 1 role / service, least privilege
 # =============================================================================
 data "aws_iam_policy_document" "lambda_assume" {
@@ -152,6 +167,16 @@ resource "aws_iam_role_policy" "baseline" {
         Condition = {
           StringEquals = { "cloudwatch:namespace" = local.metrics_namespace }
         }
+      },
+      {
+        # Lambda's own service role (not this function's) delivers the
+        # failure record after retries are exhausted, but AWS requires the
+        # FUNCTION's execution role to hold this permission on the
+        # destination - see "Configure a destination" in the Lambda docs.
+        Sid      = "WriteAsyncDLQ"
+        Effect   = "Allow"
+        Action   = ["sqs:SendMessage"]
+        Resource = aws_sqs_queue.async_dlq.arn
       }
     ]
   })

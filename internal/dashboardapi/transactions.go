@@ -2,7 +2,6 @@
 package dashboardapi
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -120,5 +119,3 @@ func (s *Server) GetTransactionAudit(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(steps)
 }
-
-var _ context.Context

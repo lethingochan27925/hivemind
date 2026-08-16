@@ -9,15 +9,18 @@ package budget
 
 import (
 	"context"
+	"log"
 
 	"github.com/lethingochan27925/hivemind/pkg/cockroach"
 )
 
-// Gia Claude Haiku tren Bedrock (USD / 1K token). Giu dong bo voi
-// internal/dashboardapi/cost.go - neu doi gia, doi ca hai.
+// Gia Claude Haiku tren Bedrock (USD / 1K token) - nguon gia tinh DUY NHAT.
+// internal/dashboardapi/cost.go tham chieu thang toi hai hang so nay (khong
+// khai bao rieng ban sao) de ngan sach va con so hien tren dashboard khong
+// bao gio lech nhau chi vi mot noi doi gia con noi kia quen.
 const (
-	claudeInputCostPer1K  = 0.00025
-	claudeOutputCostPer1K = 0.00125
+	ClaudeInputCostPer1K  = 0.00025
+	ClaudeOutputCostPer1K = 0.00125
 
 	// Khop voi default cua system_policy; dung khi bang policy chua ton tai.
 	defaultDailyBudgetUSD = 5.0
@@ -25,8 +28,8 @@ const (
 
 // EstimateCost quy doi token da dung thanh USD.
 func EstimateCost(tokensIn, tokensOut int) float64 {
-	return float64(tokensIn)/1000.0*claudeInputCostPer1K +
-		float64(tokensOut)/1000.0*claudeOutputCostPer1K
+	return float64(tokensIn)/1000.0*ClaudeInputCostPer1K +
+		float64(tokensOut)/1000.0*ClaudeOutputCostPer1K
 }
 
 // Exceeded tra loi: chi tieu hom nay, tran ngan sach, va da vuot chua.
@@ -35,9 +38,18 @@ func Exceeded(ctx context.Context, db *cockroach.Client) (spendUSD, budgetUSD fl
 	budgetUSD = defaultDailyBudgetUSD
 	// Bang system_policy do dashboard-api tu tao lan dau dung den; neu chua co
 	// (fleet chay truoc khi ai mo dashboard) thi dung default - khong tao bang
-	// tu day de dispatcher khong can quyen DDL.
-	_ = db.Pool.QueryRow(ctx,
-		`SELECT daily_budget_usd FROM system_policy WHERE id = 1`).Scan(&budgetUSD)
+	// tu day de dispatcher khong can quyen DDL. Chi loi "bang chua ton tai" va
+	// "chua co dong nao" duoc coi la binh thuong va bo qua trong im lang; loi
+	// khac (mang, quyen, timeout) duoc log ra - truoc day MOI loi deu bi nuot,
+	// nen mot loi mang keo dai co the khien guardrail chay sai ngan sach hang
+	// gio ma khong ai trong log thay dau hieu gi.
+	if err := db.Pool.QueryRow(ctx,
+		`SELECT daily_budget_usd FROM system_policy WHERE id = 1`).Scan(&budgetUSD); err != nil {
+		if cockroach.ShouldWarn(err) {
+			log.Printf("[warn] budget.Exceeded: reading system_policy failed, using default $%.2f: %v", defaultDailyBudgetUSD, err)
+		}
+		budgetUSD = defaultDailyBudgetUSD
+	}
 
 	var tokensIn, tokensOut int
 	if err = db.Pool.QueryRow(ctx, `

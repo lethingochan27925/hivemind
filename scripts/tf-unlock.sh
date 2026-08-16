@@ -13,6 +13,8 @@
 # Lock cua backend S3 (use_lockfile) la mot object JSON canh state file - doc
 # truc tiep tu S3 nen khong can parse stderr cua terraform.
 set -uo pipefail
+export AWS_PAGER="" # AWS CLI v2 pipes output through `less` by default when
+                     # stdout is a terminal - never useful in a script.
 cd "$(dirname "$0")/.."
 
 MODE="${1:-}"

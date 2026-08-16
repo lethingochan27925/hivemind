@@ -143,6 +143,20 @@ export interface CostData {
   by_agent: AgentCost[] | null;
 }
 
+export interface PipelineRun {
+  id: number;
+  name: string;
+  display_title: string;
+  status: string; // queued | in_progress | completed
+  conclusion: string | null; // success | failure | cancelled | ...
+  html_url: string;
+  run_number: number;
+  head_branch: string;
+  run_started_at: string;
+  updated_at: string;
+  event: string;
+}
+
 // --- Control plane types -----------------------------------------------------
 export interface ScheduleState {
   service: string;
@@ -317,18 +331,112 @@ export interface RegionsStatus {
   regions: RegionInfo[];
 }
 
-const CONTROL_TOKEN = process.env.NEXT_PUBLIC_CONTROL_TOKEN;
+// The control token used to live in NEXT_PUBLIC_CONTROL_TOKEN, a Next.js
+// build-time constant. That is fine for config that is genuinely public, but
+// this dashboard is a static export served straight from S3/CloudFront
+// (next.config.ts: output: "export") \u2014 there is no server to keep a secret
+// on. A NEXT_PUBLIC_* value is inlined into the published JS bundle verbatim,
+// so the one thing standing between the internet and rollback/region/memory
+// mutations was sitting in plain text in a public file anyone could curl.
+//
+// This keeps the token out of the build entirely: it is asked for once, at
+// runtime, in the operator's own browser, and kept only in sessionStorage
+// (cleared when the tab closes, never written to disk, never shipped in any
+// bundle). It is still a shared-secret header, not real authentication \u2014 the
+// fix for that is a real auth layer in front of the Function URL, called out
+// in docs/SECURITY.md \u2014 but a secret only an operator who was prompted for it
+// ever holds is a materially smaller exposure than one baked into a public
+// static site forever.
+function getControlToken(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return sessionStorage.getItem("hm-control-token") ?? "";
+  } catch {
+    return "";
+  }
+}
+
+// pendingTokenPrompt de-duplicates concurrent prompts: a bulk action (e.g.
+// "send back" on N selected review cases) fires N requests in parallel via
+// Promise.allSettled, and before this guard each one independently hit 403
+// and called window.prompt() - an operator clicking one bulk button got N
+// stacked native dialogs asking the identical question, and any of them
+// cancelled or mistyped left just that one request permanently un-retried
+// while its siblings succeeded. Every concurrent caller now awaits the same
+// single prompt instead.
+let pendingTokenPrompt: Promise<string> | null = null;
+
+function promptForControlToken(): Promise<string> {
+  if (typeof window === "undefined") return Promise.resolve("");
+  if (pendingTokenPrompt) return pendingTokenPrompt;
+
+  pendingTokenPrompt = Promise.resolve().then(() => {
+    const entered = window.prompt(
+      "Control token required for this action.\n\nAsk whoever deployed HiveMind for the CONTROL_TOKEN value (leave blank if none is configured)."
+    );
+    if (entered === null) return "";
+    try {
+      sessionStorage.setItem("hm-control-token", entered);
+    } catch {
+      // Private mode: the token still works for this call, it just will not be remembered.
+    }
+    return entered;
+  });
+  pendingTokenPrompt.finally(() => {
+    pendingTokenPrompt = null;
+  });
+  return pendingTokenPrompt;
+}
+
 function controlHeaders(): Record<string, string> {
   const h: Record<string, string> = { "Content-Type": "application/json" };
-  if (CONTROL_TOKEN) h["X-Control-Token"] = CONTROL_TOKEN;
+  const token = getControlToken();
+  if (token) h["X-Control-Token"] = token;
   return h;
 }
 
-async function fetchJSON<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    cache: "no-store",
-  });
+const REQUEST_TIMEOUT_MS = 15_000;
+
+async function fetchJSON<T>(path: string, options?: RequestInit, isRetry = false): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      cache: "no-store",
+      // Without this, a control-plane API that hangs (network partition, a
+      // Lambda cold-starting behind a stuck connection) left the caller's
+      // `loading` state true forever \u2014 the page never surfaced an error, it
+      // just looked broken.
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "TimeoutError") {
+      throw new Error(`API request to ${path} timed out after ${REQUEST_TIMEOUT_MS / 1000}s`);
+    }
+    throw new Error(`API request to ${path} failed: ${(e as Error).message}`);
+  }
+  // /control/pipeline is the one path that breaks the "403 always means
+  // missing control token" rule: it proxies GitHub's Actions API verbatim
+  // (internal/dashboardapi/pipeline.go), including GitHub's own 403s (rate
+  // limit, bad GITHUB_TOKEN) - it is never gated by controlAllowed(). Without
+  // this exclusion, a real upstream rate limit made the Pipeline page's 90s
+  // poll pop a native "enter your CONTROL_TOKEN" prompt every cycle for a
+  // problem that prompt can't fix.
+  if (res.status === 403 && !isRetry && path !== "/control/pipeline") {
+    // Everywhere else, 403 is returned only by controlAllowed()'s token
+    // check (internal/dashboardapi/control.go), so it unambiguously means
+    // "this action needs the control token" - ask once and retry with it
+    // rather than surfacing a bare "API 403 forbidden" for what is, from an
+    // operator's point of view, a password prompt.
+    const token = await promptForControlToken();
+    if (token) {
+      return fetchJSON<T>(
+        path,
+        { ...options, headers: { ...(options?.headers as Record<string, string>), "X-Control-Token": token } },
+        true
+      );
+    }
+  }
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
     throw new Error(`API ${res.status} ${path}${detail ? ` \u2014 ${detail.trim()}` : ""}`);
@@ -347,7 +455,7 @@ export const api = {
   }) =>
     fetchJSON<{ status: string }>("/reviews/decide", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: controlHeaders(),
       body: JSON.stringify(body),
     }),
   getMemory: () => fetchJSON<MemoryData>("/memory"),
@@ -362,7 +470,7 @@ export const api = {
   simulateCrash: () =>
     fetchJSON<{ status: string; task_id: string; message: string }>(
       "/infrastructure/simulate-crash",
-      { method: "POST" }
+      { method: "POST", headers: controlHeaders() }
     ),
   getLambdas: () => fetchJSON<LambdaInfo[]>("/control/lambdas"),
   search: (q: string) => fetchJSON<SearchResults>(`/control/search?q=${encodeURIComponent(q)}`),
@@ -436,7 +544,7 @@ export const api = {
       body: JSON.stringify({ action: "override", task_id, verdict, reviewer_id, notes: notes ?? "" }),
     }),
   bulkReview: (task_ids: string[], decision: "approved" | "rejected", reviewer_id: string, notes?: string) =>
-    fetchJSON<{ decided: number; failed: number }>("/reviews/bulk", {
+    fetchJSON<{ decided: number; failed: number; memory_learned: number }>("/reviews/bulk", {
       method: "POST",
       headers: controlHeaders(),
       body: JSON.stringify({ task_ids, decision, reviewer_id, notes: notes ?? "" }),
@@ -458,6 +566,8 @@ export const api = {
     }),
   getResources: () => fetchJSON<ResourceInfo[]>("/control/resources"),
   getDbStats: () => fetchJSON<DbStats>("/control/db"),
+  getPipelineRuns: () =>
+    fetchJSON<{ workflow_runs: PipelineRun[] }>("/control/pipeline").then((r) => r.workflow_runs ?? []),
   runQuery: (sql: string) =>
     fetchJSON<QueryResult>("/control/query", {
       method: "POST",

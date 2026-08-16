@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
-	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 )
 
 type titanEmbedRequest struct {
@@ -32,8 +32,8 @@ func (c *Client) EmbedText(ctx context.Context, text string) ([]float32, error) 
 
 	out, err := c.Embedding.InvokeModel(ctx, &bedrockruntime.InvokeModelInput{
 		ModelId:     &c.TitanModelID,
-		ContentType: strPtr("application/json"),
-		Accept:      strPtr("application/json"),
+		ContentType: aws.String("application/json"),
+		Accept:      aws.String("application/json"),
 		Body:        reqBody,
 	})
 	if err != nil {
@@ -47,7 +47,3 @@ func (c *Client) EmbedText(ctx context.Context, text string) ([]float32, error) 
 
 	return resp.Embedding, nil
 }
-
-func strPtr(s string) *string { return &s }
-
-var _ = types.ResponseStreamMemberChunk{}

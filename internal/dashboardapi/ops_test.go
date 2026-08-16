@@ -68,12 +68,15 @@ func TestControlTokenGuardsEveryMutatingEndpoint(t *testing.T) {
 	s := &Server{}
 
 	endpoints := map[string]http.HandlerFunc{
-		"/control/task":       s.TaskControl,
-		"/control/memory":     s.MemoryAdmin,
-		"/control/memory/job": s.MemoryJob,
-		"/control/rollback":   s.RollbackService,
-		"/control/schedule":   s.ScheduleOne,
-		"/control/invoke":     s.InvokeService,
+		"/control/task":                  s.TaskControl,
+		"/control/memory":                s.MemoryAdmin,
+		"/control/memory/job":            s.MemoryJob,
+		"/control/rollback":              s.RollbackService,
+		"/control/schedule":              s.ScheduleOne,
+		"/control/invoke":                s.InvokeService,
+		"/reviews/decide":                s.DecideReview,
+		"/reviews/bulk":                  s.BulkReview,
+		"/infrastructure/simulate-crash": s.SimulateCrash,
 	}
 	for path, h := range endpoints {
 		t.Run(path, func(t *testing.T) {
@@ -124,9 +127,27 @@ func TestMemoryJobValidatesThreshold(t *testing.T) {
 	}
 }
 
+// --- Single review -------------------------------------------------------------
+
+func TestDecideReviewRejectsBadInput(t *testing.T) {
+	t.Setenv("CONTROL_TOKEN", "")
+	s := &Server{}
+
+	for _, body := range []map[string]string{
+		{"reviewer_id": "qa", "decision": "approved"}, // no task_id
+		{"task_id": "t1", "decision": "approved"},     // no reviewer_id
+		{"task_id": "t1", "reviewer_id": "qa"},        // no decision
+	} {
+		if got := post(t, s.DecideReview, "/reviews/decide", body).Code; got != http.StatusBadRequest {
+			t.Errorf("body %v: got %d, want 400", body, got)
+		}
+	}
+}
+
 // --- Bulk review -------------------------------------------------------------
 
 func TestBulkReviewValidation(t *testing.T) {
+	t.Setenv("CONTROL_TOKEN", "")
 	s := &Server{}
 
 	tooMany := make([]string, 501)

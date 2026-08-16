@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { api, LambdaInfo, ResourceInfo } from "@/lib/api";
 import { useLive } from "@/lib/use-live";
 import { useFleet } from "@/lib/use-fleet";
+import { useInfrastructure } from "@/lib/use-infrastructure";
 import { useQueryParam } from "@/lib/use-query-param";
 import { Panel } from "@/components/ui/panel";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +25,7 @@ import {
   Pause,
   ChevronRight,
 } from "lucide-react";
+import { useT } from "@/lib/i18n";
 
 const REGION = process.env.NEXT_PUBLIC_AWS_REGION || "ap-southeast-1";
 
@@ -85,7 +87,8 @@ interface ChaosRun {
 }
 
 export default function InfrastructurePage() {
-  const { data, error, lastUpdated } = useLive(api.getInfrastructure, 5000);
+  const t = useT();
+  const { data, error, lastUpdated } = useInfrastructure();
   const lambdas = useLive(api.getLambdas, 15000);
   const fleet = useFleet();
   const resources = useLive(api.getResources, 60000);
@@ -155,12 +158,12 @@ export default function InfrastructurePage() {
           <div className="flex items-center gap-2">
             {totalResources > 0 && (
               <Badge variant="blue" dot>
-                {totalResources} resources
+                {totalResources} {t("resources")}
               </Badge>
             )}
             {services.length > 0 && (
               <Badge variant={okCount === services.length ? "green" : "yellow"} dot>
-                {okCount}/{services.length} healthy
+                {okCount}/{services.length} {t("healthy")}
               </Badge>
             )}
           </div>
@@ -185,14 +188,14 @@ export default function InfrastructurePage() {
               <table className="w-full text-[14px]">
                 <thead>
                   <tr className="text-left text-text-tertiary border-b border-border bg-bg-inset/40">
-                    <th className="py-2.5 px-4 font-normal">Function</th>
-                    <th className="py-2.5 px-3 font-normal">State</th>
-                    <th className="py-2.5 px-3 font-normal">Alarm</th>
-                    <th className="py-2.5 px-3 font-normal">Schedule</th>
-                    <th className="py-2.5 px-3 font-normal text-right">Ver</th>
-                    <th className="py-2.5 px-3 font-normal text-right">Memory</th>
-                    <th className="py-2.5 px-3 font-normal text-right">Timeout</th>
-                    <th className="py-2.5 px-4 font-normal text-right">Control</th>
+                    <th className="py-2.5 px-4 font-normal">{t("Function")}</th>
+                    <th className="py-2.5 px-3 font-normal">{t("State")}</th>
+                    <th className="py-2.5 px-3 font-normal">{t("Alarm")}</th>
+                    <th className="py-2.5 px-3 font-normal">{t("Schedule")}</th>
+                    <th className="py-2.5 px-3 font-normal text-right">{t("Ver")}</th>
+                    <th className="py-2.5 px-3 font-normal text-right">{t("Memory")}</th>
+                    <th className="py-2.5 px-3 font-normal text-right">{t("Timeout")}</th>
+                    <th className="py-2.5 px-4 font-normal text-right">{t("Control")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -226,7 +229,7 @@ export default function InfrastructurePage() {
                               {sched ?? "…"}
                             </Badge>
                           ) : (
-                            <span className="text-[12px] text-text-tertiary">on demand</span>
+                            <span className="text-[12px] text-text-tertiary">{t("on demand")}</span>
                           )}
                         </td>
                         <td className="py-2.5 px-3 tnum text-right text-text-secondary">{l.version}</td>
@@ -234,7 +237,7 @@ export default function InfrastructurePage() {
                         <td className="py-2.5 px-3 tnum text-right text-text-secondary">{l.timeout_sec}s</td>
                         <td className="py-2.5 px-4 text-right">
                           <span className="inline-flex items-center gap-1 text-[12px] text-text-tertiary">
-                            open <ChevronRight size={12} />
+                            {t("open")} <ChevronRight size={12} />
                           </span>
                         </td>
                       </tr>
@@ -260,8 +263,14 @@ export default function InfrastructurePage() {
           title="Infrastructure inventory"
           subtitle="every resource Terraform tagged Project=hivemind - click a service to expand"
         >
-          {svcKeys.length === 0 ? (
-            <EmptyState message="Loading inventory…" />
+          {resources.loading ? (
+            <div className="p-3 space-y-2">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="h-6 hm-skeleton" />
+              ))}
+            </div>
+          ) : svcKeys.length === 0 ? (
+            <EmptyState message="No tagged resources found." />
           ) : (
             <div className="space-y-2">
               <div className="flex flex-wrap gap-2">
@@ -275,7 +284,7 @@ export default function InfrastructurePage() {
                         : "border-border bg-bg-inset/40 text-text-secondary hover:text-text-primary hover:border-border-strong"
                     }`}
                   >
-                    <span className="font-semibold">{SERVICE_LABEL[svc] ?? svc}</span>
+                    <span className="font-semibold">{t(SERVICE_LABEL[svc] ?? svc)}</span>
                     <span className="tnum text-text-tertiary">{grouped[svc].length}</span>
                   </button>
                 ))}
@@ -285,9 +294,14 @@ export default function InfrastructurePage() {
                 <div className="mt-3 rounded-lg border border-border overflow-hidden">
                   <div className="flex items-center justify-between px-3.5 h-10 border-b border-border bg-bg-inset/60">
                     <span className="text-[13px] font-semibold text-text-primary">
-                      {SERVICE_LABEL[svcOpen] ?? svcOpen}
+                      {t(SERVICE_LABEL[svcOpen] ?? svcOpen)}
                     </span>
-                    <button onClick={() => setSvcPick(null)} className="text-text-tertiary hover:text-text-primary">
+                    <button
+                      onClick={() => setSvcPick(null)}
+                      title={t("Close")}
+                      aria-label={t("Close")}
+                      className="text-text-tertiary hover:text-text-primary"
+                    >
                       <X size={14} />
                     </button>
                   </div>
@@ -305,7 +319,7 @@ export default function InfrastructurePage() {
                             }}
                             className="text-[12px] text-blue hover:underline"
                           >
-                            control
+                            {t("control")}
                           </button>
                         )}
                         <a
@@ -313,7 +327,7 @@ export default function InfrastructurePage() {
                           target="_blank"
                           rel="noreferrer"
                           className="text-text-tertiary hover:text-text-primary"
-                          title="Open in AWS console"
+                          title={t("Open in AWS console")}
                         >
                           <ExternalLink size={13} />
                         </a>
@@ -334,9 +348,7 @@ export default function InfrastructurePage() {
             <div className="flex items-start gap-2 text-[14px] text-text-secondary max-w-2xl">
               <AlertTriangle size={15} className="text-yellow shrink-0 mt-0.5" />
               <span>
-                Backdates a running task&apos;s heartbeat to simulate an agent crash. The Heartbeat
-                Reaper detects the stale lease and re-queues the task - a fresh agent resumes from
-                the last checkpoint in CockroachDB.
+                {t("Backdates a running task's heartbeat to simulate an agent crash. The Heartbeat Reaper detects the stale lease and re-queues the task - a fresh agent resumes from the last checkpoint in CockroachDB.")}
               </span>
             </div>
             <button
@@ -345,7 +357,7 @@ export default function InfrastructurePage() {
               className="flex items-center gap-1.5 bg-yellow/12 text-yellow border border-yellow/30 rounded-md px-3 py-2 text-[14px] font-medium disabled:opacity-40 hover:bg-yellow/20 transition-colors shrink-0"
             >
               <Zap size={13} />
-              {simulating ? "Simulating…" : "Simulate agent crash"}
+              {simulating ? t("Simulating…") : t("Simulate agent crash")}
             </button>
           </div>
           {simResult && (
@@ -355,29 +367,29 @@ export default function InfrastructurePage() {
           {chaos && (
             <div className="mt-3 border-t border-border pt-3">
               <div className="text-[13px] text-text-tertiary mb-2">
-                Recovery of task <span className="tnum text-text-secondary">{chaos.taskId.slice(0, 8)}</span> -
-                watched live from the audit log
+                {t("Recovery of task")} <span className="tnum text-text-secondary">{chaos.taskId.slice(0, 8)}</span> -{" "}
+                {t("watched live from the audit log")}
               </div>
               <ol className="flex flex-col sm:flex-row gap-2 sm:gap-0 sm:items-stretch">
-                <TrackStage done icon={<Zap size={13} />} label="Agent killed" detail="heartbeat backdated" tone="yellow" />
+                <TrackStage done icon={<Zap size={13} />} label={t("Agent killed")} detail={t("heartbeat backdated")} tone="yellow" />
                 <StageArrow done={!!requeuedAt} />
                 <TrackStage
                   done={!!requeuedAt}
                   icon={requeuedAt ? <Check size={13} /> : <Loader2 size={13} className="animate-spin" />}
-                  label="Reaper re-queued"
-                  detail={requeuedAt ? `+${secsFromKill(requeuedAt)}s after kill` : "waiting for 30s sweep…"}
+                  label={t("Reaper re-queued")}
+                  detail={requeuedAt ? t("+{s}s after kill").replace("{s}", String(secsFromKill(requeuedAt))) : t("waiting for 30s sweep…")}
                   tone={requeuedAt ? "green" : "default"}
                 />
                 <StageArrow done={!!resumedAt} />
                 <TrackStage
                   done={!!resumedAt}
                   icon={resumedAt ? <RotateCcw size={13} /> : <Loader2 size={13} className="animate-spin" />}
-                  label="Resumed from checkpoint"
+                  label={t("Resumed from checkpoint")}
                   detail={
                     resumedAt
-                      ? `+${secsFromKill(resumedAt)}s - scratchpad read, no work lost`
+                      ? t("+{s}s - scratchpad read, no work lost").replace("{s}", String(secsFromKill(resumedAt)))
                       : requeuedAt
-                        ? "waiting for a worker to claim…"
+                        ? t("waiting for a worker to claim…")
                         : "…"
                   }
                   tone={resumedAt ? "green" : "default"}
@@ -385,8 +397,7 @@ export default function InfrastructurePage() {
               </ol>
               {resumedAt && (
                 <div className="mt-2 text-[13px] text-green">
-                  Crash absorbed in {secsFromKill(resumedAt)}s. Durable working memory made the failure a
-                  non-event.
+                  {t("Crash absorbed in {s}s. Durable working memory made the failure a non-event.").replace("{s}", String(secsFromKill(resumedAt)))}
                 </div>
               )}
             </div>
@@ -405,7 +416,7 @@ export default function InfrastructurePage() {
                   }`}
                 >
                   <div className="text-[14px] text-text-primary">
-                    {inc.action === "task_resumed" ? "Task resumed from checkpoint" : "Task re-queued after crash"} -{" "}
+                    {inc.action === "task_resumed" ? t("Task resumed from checkpoint") : t("Task re-queued after crash")} -{" "}
                     <span className="tnum">{inc.service}</span>
                     {inc.task_id && <span className="tnum text-text-tertiary"> · {inc.task_id.slice(0, 8)}</span>}
                   </div>
@@ -443,6 +454,7 @@ function NodeDetail({
   schedule?: string;
   onClose: () => void;
 }) {
+  const t = useT();
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const scheduled = SCHEDULED.includes(node.service);
@@ -468,20 +480,20 @@ function NodeDetail({
       title={`Node · ${node.service}`}
       subtitle="live configuration and direct actions on this component"
       actions={
-        <button onClick={onClose} className="text-text-tertiary hover:text-text-primary" title="Close">
+        <button onClick={onClose} className="text-text-tertiary hover:text-text-primary" title={t("Close")} aria-label={t("Close")}>
           <X size={15} />
         </button>
       }
     >
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-[13px]">
-        <KV label="State" value={node.state} tone={lambdaStateTone(node.state)} />
-        <KV label="Alarm" value={alarm} tone={alarmTone(alarm)} />
-        <KV label="Version" value={`v${node.version}`} />
-        <KV label="Memory" value={`${node.memory_mb} MB`} />
-        <KV label="Timeout" value={`${node.timeout_sec}s`} />
+        <KV label={t("State")} value={node.state} tone={lambdaStateTone(node.state)} />
+        <KV label={t("Alarm")} value={alarm} tone={alarmTone(alarm)} />
+        <KV label={t("Version")} value={`v${node.version}`} />
+        <KV label={t("Memory")} value={`${node.memory_mb} MB`} />
+        <KV label={t("Timeout")} value={`${node.timeout_sec}s`} />
         <KV
-          label="Schedule"
-          value={schedule ?? (scheduled ? "…" : "on demand")}
+          label={t("Schedule")}
+          value={schedule ?? (scheduled ? "…" : t("on demand"))}
           tone={schedule === "ENABLED" ? "green" : "default"}
         />
       </div>
@@ -495,7 +507,7 @@ function NodeDetail({
                 act(
                   "schedule",
                   () => api.scheduleOne(node.service, schedule === "ENABLED" ? "disable" : "enable"),
-                  schedule === "ENABLED" ? "Schedule disabled." : "Schedule enabled."
+                  schedule === "ENABLED" ? t("Schedule disabled.") : t("Schedule enabled.")
                 )
               }
               className={`${btn} ${
@@ -511,29 +523,29 @@ function NodeDetail({
               ) : (
                 <Play size={13} />
               )}
-              {schedule === "ENABLED" ? "Disable schedule" : "Enable schedule"}
+              {schedule === "ENABLED" ? t("Disable schedule") : t("Enable schedule")}
             </button>
             <button
               disabled={busy !== null}
-              onClick={() => act("invoke", () => api.invokeService(node.service), `Invoked ${node.service}.`)}
+              onClick={() => act("invoke", () => api.invokeService(node.service), t("Invoked {svc}.").replace("{svc}", node.service))}
               className={`${btn} bg-blue/12 text-blue border-blue/30 hover:bg-blue/20`}
             >
               {busy === "invoke" ? <Loader2 size={13} className="animate-spin" /> : <Zap size={13} />}
-              Run now
+              {t("Run now")}
             </button>
           </>
         )}
         <button
           disabled={busy !== null}
           onClick={() => {
-            if (confirm(`Roll ${node.service} back to its previous published version?`)) {
-              act("rollback", () => api.rollbackService(node.service), `${node.service} rolled back.`);
+            if (confirm(t("Roll {svc} back to its previous published version?").replace("{svc}", node.service))) {
+              act("rollback", () => api.rollbackService(node.service), t("{svc} rolled back.").replace("{svc}", node.service));
             }
           }}
           className={`${btn} border-border text-text-secondary hover:text-text-primary`}
         >
           {busy === "rollback" ? <Loader2 size={13} className="animate-spin" /> : <Undo2 size={13} />}
-          Rollback version
+          {t("Rollback version")}
         </button>
         <a
           href={`https://console.aws.amazon.com/cloudwatch/home?region=${REGION}#logsV2:log-groups/log-group/${encodeURIComponent(
@@ -544,7 +556,7 @@ function NodeDetail({
           className={`${btn} border-border text-text-secondary hover:text-text-primary`}
         >
           <ExternalLink size={13} />
-          Logs
+          {t("Logs")}
         </a>
       </div>
 
@@ -567,6 +579,7 @@ function KV({ label, value, tone }: { label: string; value: string; tone?: strin
 // --- Multi-region control ----------------------------------------------------
 
 function RegionsPanel() {
+  const t = useT();
   const { data, error } = useLive(api.getRegions, 20000);
   const [region, setRegion] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -595,10 +608,10 @@ function RegionsPanel() {
         data ? (
           <Badge variant={data.multi_region ? "green" : "default"} dot>
             {data.multi_region
-              ? `${regions.length} region${regions.length > 1 ? "s" : ""}${
+              ? `${regions.length} ${regions.length > 1 ? t("regions") : t("region")}${
                   data.survival_goal ? ` · ${data.survival_goal}` : ""
                 }`
-              : "single-region"}
+              : t("single-region")}
           </Badge>
         ) : null
       }
@@ -609,7 +622,7 @@ function RegionsPanel() {
         <Globe2 size={15} className="text-text-tertiary" />
         {regions.length === 0 ? (
           <span className="text-[13px] text-text-tertiary">
-            Database has no region configuration yet - add the primary region to begin.
+            {t("Database has no region configuration yet - add the primary region to begin.")}
           </span>
         ) : (
           regions.map((r) => (
@@ -620,13 +633,17 @@ function RegionsPanel() {
               }`}
             >
               {r.region}
-              {r.primary && <span className="text-[10px] font-bold uppercase">primary</span>}
+              {r.primary && <span className="text-[10px] font-bold uppercase">{t("primary")}</span>}
               {!r.primary && (
                 <button
                   disabled={busy !== null}
-                  onClick={() => run(`drop-${r.region}`, () => api.alterRegion("drop", r.region), `Dropped ${r.region}.`)}
+                  onClick={() => {
+                    if (!confirm(t("Drop region {r}? This changes the database's survivability.").replace("{r}", r.region))) return;
+                    run(`drop-${r.region}`, () => api.alterRegion("drop", r.region), t("Dropped {r}.").replace("{r}", r.region));
+                  }}
                   className="text-text-tertiary hover:text-red disabled:opacity-40"
-                  title={`Drop ${r.region}`}
+                  title={t("Drop {r}").replace("{r}", r.region)}
+                  aria-label={t("Drop region {r}").replace("{r}", r.region)}
                 >
                   {busy === `drop-${r.region}` ? <Loader2 size={12} className="animate-spin" /> : <X size={12} />}
                 </button>
@@ -653,26 +670,28 @@ function RegionsPanel() {
                 regions.length === 0
                   ? api.alterRegion("set_primary", region.trim())
                   : api.alterRegion("add", region.trim()),
-              regions.length === 0 ? `Primary region set: ${region.trim()}.` : `Added region ${region.trim()}.`
+              regions.length === 0
+                ? t("Primary region set: {r}.").replace("{r}", region.trim())
+                : t("Added region {r}.").replace("{r}", region.trim())
             )
           }
           className="flex items-center gap-1.5 px-3 py-2 rounded-md bg-blue/12 text-blue border border-blue/30 text-[13px] font-semibold hover:bg-blue/20 disabled:opacity-40 transition-colors"
         >
           {busy === "add" ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
-          {regions.length === 0 ? "Set primary region" : "Add region"}
+          {regions.length === 0 ? t("Set primary region") : t("Add region")}
         </button>
         {regions.length > 1 && (
           <button
             disabled={busy !== null}
-            onClick={() => run("survive", () => api.alterRegion("survive_region"), "Survival goal: REGION failure.")}
+            onClick={() => run("survive", () => api.alterRegion("survive_region"), t("Survival goal: REGION failure."))}
             className="flex items-center gap-1.5 px-3 py-2 rounded-md bg-green/12 text-green border border-green/30 text-[13px] font-semibold hover:bg-green/20 disabled:opacity-40 transition-colors"
           >
             {busy === "survive" ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
-            Survive region failure
+            {t("Survive region failure")}
           </button>
         )}
         <span className="text-[12px] text-text-tertiary ml-auto">
-          Cluster must have the region provisioned first - see <span className="tnum">scripts/multi-region.sh</span>.
+          {t("Cluster must have the region provisioned first - see")} <span className="tnum">scripts/multi-region.sh</span>.
         </span>
       </div>
 

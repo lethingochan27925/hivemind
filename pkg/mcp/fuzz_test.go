@@ -3,6 +3,7 @@ package mcp
 import (
 	"encoding/json"
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -54,6 +55,25 @@ func FuzzRiskScoreString(f *testing.F) {
 		}
 		if math.IsNaN(txn.RiskScore()) {
 			t.Fatalf("risk_score %q decoded to NaN", s)
+		}
+	})
+}
+
+// FuzzSQLQuoteLiteral is the one invariant that matters for the tools' SQL
+// injection defence: whatever goes in, the string interpolated into the query
+// must never contain an odd (unescaped) single quote, because that quote is
+// the only character that lets attacker input break out of the literal.
+func FuzzSQLQuoteLiteral(f *testing.F) {
+	f.Add("C1234567")
+	f.Add("O'Brien")
+	f.Add("'; DROP TABLE tasks; --")
+	f.Add("' OR '1'='1")
+	f.Add("")
+
+	f.Fuzz(func(t *testing.T, s string) {
+		got := sqlQuoteLiteral(s)
+		if strings.Count(got, "'")%2 != 0 {
+			t.Fatalf("sqlQuoteLiteral(%q) = %q has an odd number of quotes - a literal could be broken out of", s, got)
 		}
 	})
 }

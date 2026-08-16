@@ -7,15 +7,17 @@
 package dashboardapi
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	cetypes "github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
+	"github.com/lethingochan27925/hivemind/internal/cache"
 )
 
 type ServiceCost struct {
@@ -36,11 +38,7 @@ type CloudCost struct {
 
 const cloudCostTTL = 6 * time.Hour
 
-var (
-	ccMu     sync.Mutex
-	ccCache  *CloudCost
-	ccLoaded time.Time
-)
+var ccCache = cache.NewTTL[*CloudCost](cloudCostTTL)
 
 func (s *Server) GetCloudCost(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -48,15 +46,27 @@ func (s *Server) GetCloudCost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ccMu.Lock()
-	defer ccMu.Unlock()
-
-	if ccCache != nil && time.Since(ccLoaded) < cloudCostTTL {
-		writeJSON(w, ccCache)
+	out, err := ccCache.Get(func() (*CloudCost, time.Duration, error) {
+		// Background, not r.Context(): cache.TTL holds its lock across this
+		// call, so every request that piles up during a cache miss shares
+		// this ONE Cost Explorer round trip - it must not abort just because
+		// the one caller who happened to trigger it navigated away first.
+		return fetchCloudCost(context.Background())
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	writeJSON(w, out)
+}
 
-	ctx := r.Context()
+// fetchCloudCost never returns a Go error itself - every failure mode
+// (AWS config, Cost Explorer not enabled/lacking permission) is reported
+// through CloudCost.Note so the dashboard still renders something explaining
+// why, instead of an opaque 500. Those degraded results come back with
+// ttl < 0 so cache.TTL never pins a temporary AWS hiccup for the full 6h
+// window - the next request tries again immediately.
+func fetchCloudCost(ctx context.Context) (*CloudCost, time.Duration, error) {
 	out := &CloudCost{CacheMinutes: int(cloudCostTTL.Minutes())}
 
 	now := time.Now().UTC()
@@ -67,8 +77,7 @@ func (s *Server) GetCloudCost(w http.ResponseWriter, r *http.Request) {
 	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion("us-east-1"))
 	if err != nil {
 		out.Note = "AWS config unavailable"
-		writeJSON(w, out)
-		return
+		return out, -1, nil
 	}
 
 	ce := costexplorer.NewFromConfig(cfg)
@@ -77,14 +86,13 @@ func (s *Server) GetCloudCost(w http.ResponseWriter, r *http.Request) {
 		Granularity: cetypes.GranularityMonthly,
 		Metrics:     []string{"UnblendedCost"},
 		GroupBy: []cetypes.GroupDefinition{
-			{Type: cetypes.GroupDefinitionTypeDimension, Key: strPtr("SERVICE")},
+			{Type: cetypes.GroupDefinitionTypeDimension, Key: aws.String("SERVICE")},
 		},
 	})
 	if err != nil {
 		// Cost Explorer chua bat / thieu quyen: bao ro thay vi de trang trong.
 		out.Note = "Cost Explorer unavailable: " + shortErr(err)
-		writeJSON(w, out)
-		return
+		return out, -1, nil
 	}
 
 	for _, period := range res.ResultsByTime {
@@ -109,8 +117,7 @@ func (s *Server) GetCloudCost(w http.ResponseWriter, r *http.Request) {
 	out.Available = true
 	out.RefreshedAt = time.Now().UTC().Format(time.RFC3339)
 
-	ccCache, ccLoaded = out, time.Now()
-	writeJSON(w, out)
+	return out, 0, nil
 }
 
 // shortService rut gon ten dai cua AWS ("Amazon Elastic Compute Cloud - Compute").
@@ -141,5 +148,3 @@ func sortByCostDesc(items []ServiceCost) {
 		}
 	}
 }
-
-func strPtr(s string) *string { return &s }

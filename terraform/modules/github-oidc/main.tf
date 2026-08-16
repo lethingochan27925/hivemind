@@ -75,9 +75,13 @@ resource "aws_iam_role_policy" "github_actions" {
         Resource = "arn:aws:lambda:*:*:function:${var.project}-${var.environment}-*"
       },
       {
-        Sid      = "CloudWatchRead"
-        Effect   = "Allow"
-        Action   = ["cloudwatch:DescribeAlarms"]
+        Sid    = "CloudWatchRead"
+        Effect = "Allow"
+        # DescribeAlarmHistory: deploy-canary.yml checks the whole observation
+        # window for a transient ALARM state, not just the state at the
+        # instant the wait ends - a canary that tripped and recovered before
+        # the check would otherwise read as healthy.
+        Action   = ["cloudwatch:DescribeAlarms", "cloudwatch:DescribeAlarmHistory"]
         Resource = "*"
       },
       {
@@ -122,13 +126,38 @@ resource "aws_iam_role_policy" "github_actions" {
         ]
       },
       {
-        Sid      = "TerraformFullDeploy"
+        # Scopes writes on resources that ALREADY exist and already carry the
+        # tag. aws:ResourceTag only evaluates against tags a resource already
+        # has, so this statement alone grants nothing on a CREATE call - the
+        # resource has no tags yet at that point (AWS IAM docs, "Controlling
+        # access using resource tags").
+        Sid      = "TerraformDeployExistingTagged"
         Effect   = "Allow"
         Action   = "*"
         Resource = "*"
         Condition = {
           StringEquals = {
             "aws:ResourceTag/Project" = var.project
+          }
+        }
+      },
+      {
+        # Companion to the statement above, for the CREATE case: aws:RequestTag
+        # evaluates the tags being applied IN the request, which is what a
+        # CreateRole/CreateFunction/etc. call actually carries before the
+        # resource exists to have a ResourceTag at all. AWS IAM support for
+        # evaluating aws:ResourceTag on a create-with-tags call varies by
+        # service, so relying on the ResourceTag statement alone to cover
+        # creates was, at best, inconsistent across the services Terraform
+        # touches here - this statement makes the create path an explicit,
+        # documented grant instead of an implicit one.
+        Sid      = "TerraformDeployNewTagged"
+        Effect   = "Allow"
+        Action   = "*"
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "aws:RequestTag/Project" = var.project
           }
         }
       }

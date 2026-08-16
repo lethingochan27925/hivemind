@@ -5,7 +5,40 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
+
+	"github.com/google/uuid"
 )
+
+// isValidUUID validates a canonical UUID (transactions.id / case_memory ids
+// are all UUID PKs) via the same parser the rest of the repo already depends
+// on (internal/stream/replay.go uses uuid.New()) instead of a second,
+// hand-maintained regex that could drift from what the library considers
+// valid. Rejecting anything else outright is the strongest defence against
+// injection here (OWASP SQL Injection Prevention Cheat Sheet, "Allow-list
+// Input Validation") and it is free: a caller never has a legitimate reason to
+// look up a transaction by a non-UUID string.
+func isValidUUID(s string) bool {
+	_, err := uuid.Parse(s)
+	return err == nil
+}
+
+// sqlQuoteLiteral escapes a string for safe interpolation into a single-quoted
+// SQL literal (doubling every embedded quote, the standard SQL escaping rule -
+// the same one Postgres/CockroachDB's own quote_literal() applies). The MCP
+// select_query tool takes one opaque SQL string over JSON-RPC; the protocol has
+// no bind-parameter slot, so this is the documented fallback (OWASP SQL
+// Injection Prevention Cheat Sheet, "Escaping All User-Supplied Input") for
+// when a real prepared statement is not available.
+func sqlQuoteLiteral(s string) string {
+	return strings.ReplaceAll(s, "'", "''")
+}
+
+// verdictValues / transactionTypeValues are the CHECK-constrained enums from
+// migrations/001_init.sql - allow-listing against them is stronger than
+// escaping wherever the valid set is closed.
+var verdictValues = map[string]bool{"fraud": true, "legit": true, "escalate": true}
+var transactionTypeValues = map[string]bool{"TRANSFER": true, "CASH_OUT": true}
 
 // flexFloat64 parse duoc ca so JSON thuong (0.5) lan JSON string ("1.28e-06"),
 // vi MCP server co the tra risk_score o dinh dang khac nhau tuy do lon.
@@ -84,6 +117,9 @@ func NewTools(client *Client) *Tools {
 }
 
 func (t *Tools) GetTransaction(transactionID string) (*Transaction, error) {
+	if !isValidUUID(transactionID) {
+		return nil, fmt.Errorf("invalid transaction id %q: must be a UUID", transactionID)
+	}
 	query := fmt.Sprintf(`
 		SELECT
 			id, step, type, amount,
@@ -119,7 +155,7 @@ func (t *Tools) GetCustomerContext(nameOrig string, limit int) ([]CustomerHistor
 		LEFT JOIN tasks tk ON tk.transaction_id = t.id
 		WHERE t.name_orig = '%s'
 		ORDER BY t.arrived_at DESC
-	`, nameOrig)
+	`, sqlQuoteLiteral(nameOrig))
 
 	raw, err := t.client.Select(query, limit)
 	if err != nil {
@@ -134,9 +170,16 @@ func (t *Tools) GetCustomerContext(nameOrig string, limit int) ([]CustomerHistor
 }
 
 func (t *Tools) SearchSimilarCases(transactionType, amountRange, verdictFilter string, limit int) ([]SimilarCase, error) {
+	if transactionType != "" && !transactionTypeValues[transactionType] {
+		return nil, fmt.Errorf("invalid transaction type %q", transactionType)
+	}
+	if verdictFilter != "" && !verdictValues[verdictFilter] {
+		return nil, fmt.Errorf("invalid verdict filter %q", verdictFilter)
+	}
+
 	verdictClause := ""
 	if verdictFilter != "" {
-		verdictClause = fmt.Sprintf("AND verdict = '%s'", verdictFilter)
+		verdictClause = fmt.Sprintf("AND verdict = '%s'", sqlQuoteLiteral(verdictFilter))
 	}
 
 	query := fmt.Sprintf(`
@@ -149,7 +192,7 @@ func (t *Tools) SearchSimilarCases(transactionType, amountRange, verdictFilter s
 		  AND amount_range = '%s'
 		  %s
 		ORDER BY salience DESC, recall_count DESC
-	`, transactionType, amountRange, verdictClause)
+	`, sqlQuoteLiteral(transactionType), sqlQuoteLiteral(amountRange), verdictClause)
 
 	raw, err := t.client.Select(query, limit)
 	if err != nil {

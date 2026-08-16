@@ -11,7 +11,7 @@ test/
 │   ├── TC-MEMORY.md         episodic recall, consolidation, salience decay
 │   ├── TC-CONCURRENCY.md    SKIP LOCKED, heartbeat reaper, resume-after-crash
 │   ├── TC-CONTROL-PLANE.md  control API + read-only DB console guard
-│   ├── TC-DASHBOARD.md      the 8 dashboard pages
+│   ├── TC-DASHBOARD.md      the 10 dashboard pages
 │   ├── TC-SCORING.md        risk routing thresholds + auto-decision
 │   ├── TC-DATA-INTEGRITY.md schema constraints as a safety net
 │   ├── TC-CICD.md           CI/CD pipeline & DevOps invariants
@@ -47,6 +47,14 @@ Every row is a **hermetic** Go test — no network, no DB — so the whole matri
 | `alterRegion`, `regionNameRe` | `internal/dashboardapi/regions_test.go` | SQL-injection region names rejected; unknown action refused before any DB round-trip |
 | `invokable`, `ScheduleOne`, `InvokeService`, `Search` | `internal/dashboardapi/node_control_test.go` | control plane cannot invoke itself; useless search queries never reach the DB |
 | `shortService`, `sortByCostDesc`, `estimateCost` | `internal/dashboardapi/cloudcost_test.go` | cloud-cost parsing/ordering and Haiku pricing maths |
+| `cache.TTL` | `internal/cache/ttl_test.go` | fresh-serve, refetch-after-expiry, an error is **never** cached, `ttl<0` results are never cached, a positive `ttl` overrides the default, concurrent misses collapse into one fetch |
+| `IsColdStartMiss`, `ShouldWarn` | `pkg/cockroach/errors_test.go` | cold-start (missing table / no row yet) vs a real error are classified correctly, incl. through a wrapped error chain |
+| `EncodeVector` (NaN/Inf) | `pkg/cockroach/fuzz_test.go`, `FuzzSQLQuoteLiteral` (`pkg/mcp/fuzz_test.go`) | a non-finite embedding never reaches CockroachDB as a literal NaN/Inf; the SQL escaper never emits an unescaped quote, for any input |
+| `MaxConns` env parsing | `pkg/cockroach/client_test.go` | `COCKROACH_MAX_CONNS` overrides the default; an invalid value falls back instead of panicking |
+| `config.Load` | `internal/config/config_test.go` | a missing required env returns an error (not a panic); defaults apply; `EMBED_DIM` is validated |
+| `DecaySalience`, `RetrieveCaseMemory` recall boost | `internal/memory/salience_test.go`, `salience_integration_test.go` | a pinned memory (salience 2.0) never crosses the archive threshold and the recall boost can never reach the pinned ceiling — the two would be indistinguishable otherwise |
+| `LoadPaySim` | `internal/stream/paysim_test.go` | malformed CSV rows are skipped (not zero-filled — a zero balance is itself a fraud signal), non-TRANSFER/CASH_OUT rows are filtered, `limit` is honoured |
+| `githubRepo`, `GetPipelineRuns` guard | `internal/dashboardapi/pipeline_test.go` | `GITHUB_REPO` override/default; non-GET rejected before any upstream call |
 
 DB-backed integration tests (`internal/memory/*_integration_test.go`) cover SKIP LOCKED claims and memory concurrency and need `DATABASE_URL`.
 

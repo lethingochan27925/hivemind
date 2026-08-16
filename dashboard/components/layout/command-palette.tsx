@@ -50,6 +50,14 @@ export function CommandPalette() {
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const activeItemRef = useRef<HTMLButtonElement>(null);
+
+  // ArrowUp/ArrowDown moved `index` without ever scrolling the highlighted
+  // row into view - past the visible ~46vh, keyboard nav kept "selecting" a
+  // row the user could no longer see.
+  useEffect(() => {
+    activeItemRef.current?.scrollIntoView({ block: "nearest" });
+  }, [index]);
 
   const close = useCallback(() => {
     setOpen(false);
@@ -294,6 +302,7 @@ export function CommandPalette() {
                   return (
                     <button
                       key={item.id}
+                      ref={active ? activeItemRef : undefined}
                       onClick={() => item.run()}
                       onMouseEnter={() => setIndex(i)}
                       className={`w-full flex items-center gap-3 px-4 py-2 text-left text-[14px] transition-colors ${

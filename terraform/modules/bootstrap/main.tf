@@ -3,10 +3,9 @@ data "aws_region" "current" {}
 
 locals {
   account_id = data.aws_caller_identity.current.account_id
-  region     = data.aws_region.current.id
+  region     = data.aws_region.current.region
 
-  bucket_name     = "${var.project}-tfstate-${local.account_id}"
-  lock_table_name = "${var.project}-tfstate-lock"
+  bucket_name = "${var.project}-tfstate-${local.account_id}"
 
   common_tags = {
     Project     = var.project
@@ -49,19 +48,10 @@ resource "aws_s3_bucket_public_access_block" "tfstate" {
   restrict_public_buckets = true
 }
 
-resource "aws_dynamodb_table" "tfstate_lock" {
-  name         = local.lock_table_name
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "LockID"
-
-  attribute {
-    name = "LockID"
-    type = "S"
-  }
-
-  tags = merge(local.common_tags, { Name = local.lock_table_name })
-
-  lifecycle {
-    prevent_destroy = true
-  }
-}
+# No DynamoDB lock table here: the root module's backend (versions.tf) uses
+# S3 native locking (use_lockfile = true), not the older DynamoDB-table
+# pattern. A DynamoDB table used to be declared in this module for that
+# purpose and was never removed after the backend moved on - if you already
+# applied this module for real, that table (<project>-tfstate-lock) is now
+# unused and safe to delete by hand; it was never referenced by the actual
+# backend configuration.

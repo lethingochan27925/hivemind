@@ -25,8 +25,8 @@ the one whose images are in ECR.
 
 | Workflow | Trigger | Purpose |
 |---|---|---|
-| `ci.yml` | push, PR | Go build/vet/fmt/test, dashboard lint + build, Python service, 7 image builds, Terraform validate, actionlint, pipeline invariants |
-| `security.yml` | push, PR, weekly | `govulncheck`, Trivy IaC scan, `gitleaks`, secret hygiene assertions |
+| `ci.yml` | push, PR | Go build/vet/fmt/test, dashboard lint + build, Python service, 7 image builds, Terraform validate, actionlint, pipeline invariants, **`go-integration`** — the same test suite run again with `-tags integration` against a real `cockroachdb/cockroach` container (schema applied fresh), not just hermetic fakes |
+| `security.yml` | push, PR, weekly | `govulncheck`, Trivy IaC scan, `gitleaks`, secret hygiene assertions, **Trivy image scan** on all 7 built container images (matrix job, fails the build on a CRITICAL finding) |
 | `build-and-push.yml` | push to main | Builds all seven images and pushes them to ECR tagged with the commit SHA |
 | `deploy-staging.yml` | after Build and Push | Secret preflight, `terraform apply` with that image tag, integration tests against CockroachDB |
 | `smoke-test.yml` | after Deploy Staging | Runs `test/integration/api_smoke.sh` against the live control plane |
@@ -50,6 +50,10 @@ Three details are deliberate:
 - **`INSUFFICIENT_DATA` promotes.** For an error-count alarm on a low-traffic
   function that is the normal resting state: it means no error datapoints were
   published, not that the check was inconclusive.
+- **The whole observation window is checked, not just the end of it.** The
+  workflow also calls `cloudwatch describe-alarm-history` for any `to ALARM`
+  transition between the traffic shift and the promote decision — an alarm
+  that fires and clears again before the final poll used to promote clean.
 
 ## Secrets
 

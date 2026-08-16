@@ -22,3 +22,13 @@ variable "error_threshold" {
   type        = number
   default     = 5
 }
+
+variable "bedrock_model_id" {
+  description = "Claude model ID (AWS/Bedrock InvocationThrottles ModelId dimension)"
+  type        = string
+}
+
+variable "bedrock_embedding_model_id" {
+  description = "Titan embedding model ID (AWS/Bedrock InvocationThrottles ModelId dimension)"
+  type        = string
+}

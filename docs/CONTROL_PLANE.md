@@ -31,7 +31,7 @@ The dashboard is not a viewer. Every page can **change the running system**, and
 
 ### Review Queue — human-in-the-loop, at scale
 
-Approve or reject one case, or select many and decide in bulk (`≤500` per call, reviewer name required — an anonymous mass approval is rejected). **Send back to agent** returns a case to the queue instead of forcing a human verdict. Every decision writes a `human_reviewed` audit row with the reviewer's name.
+Approve or reject one case, or select many and decide in bulk (`≤500` per call, reviewer name required — an anonymous mass approval is rejected). **Send back to agent** returns a case to the queue instead of forcing a human verdict. Every decision writes a `human_reviewed` audit row with the reviewer's name — and, single or bulk, is also embedded and pinned into `case_memory` (see [Agentic Memory § Human-taught memories](AGENTIC_MEMORY.md#human-taught-memories)), so the correction outlives the audit row: the next similar case recalls it. Both the free-text notes and the reviewer's own name are sanitised before that embedding happens — see [Security](SECURITY.md#prompt-injection-defence).
 
 ### Training Lab — the memory experiment, interactive
 
@@ -47,11 +47,11 @@ Pin (salience 2.0, immune to decay), archive (out of the partial vector index), 
 
 ### Cost — token spend, cloud spend, and a guardrail that acts
 
-Bedrock token cost per agent, **AWS Cost Explorer month-to-date by service** (cached 6h server-side because Cost Explorer bills per query), and the daily cap. With auto-pause armed, crossing the cap disables the schedules — the control plane checks on each poll of `/control/budget`.
+Bedrock token cost per agent, **AWS Cost Explorer month-to-date by service** (cached 6h server-side because Cost Explorer bills per query), and the daily cap. With auto-pause armed, crossing the cap disables the schedules — the control plane checks on each poll of `/control/budget`. The per-token unit price is **live**, not hardcoded: `internal/pricing` asks the AWS Pricing API for the current Claude Haiku rate (cached 12h) and the response is labelled with where the number came from — `aws-pricing-api` (both directions live), `hybrid` (one direction live, the other backfilled from the published list price — the real state of the Bedrock catalog, which lists an input SKU for Claude 3 Haiku but no output SKU), or `static` (Pricing API unreachable, published list price only, cached just 5 minutes so a transient failure doesn't pin a stale label). `internal/budget` — the guardrail that actually pauses the fleet — and the dashboard's displayed price always read from the same one constant, so the two can never quietly disagree about what a token costs.
 
 ### Pipeline — delivery
 
-Live GitHub Actions state for the release chain (CI → build → staging → smoke → canary) plus independent lanes, and **manual rollback**: move a function's `live` alias to the previous published version. It refuses when there is no earlier version rather than silently pointing at `$LATEST`.
+Live GitHub Actions state for the release chain (CI → build → staging → smoke → canary) plus independent lanes, and **manual rollback**: move a function's `live` alias to the previous published version. It refuses when there is no earlier version rather than silently pointing at `$LATEST`. The dashboard doesn't call `api.github.com` directly — every viewer's request goes through a `dashboard-api` proxy (30s shared cache, optional `GITHUB_TOKEN`) so a room full of people watching the same demo shares one upstream rate-limit budget instead of exhausting the public 60/hour limit from one office IP.
 
 ### Database — read-only SQL console
 

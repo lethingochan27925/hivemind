@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 	"github.com/lethingochan27925/hivemind/pkg/bedrock"
 	"github.com/lethingochan27925/hivemind/pkg/mcp"
@@ -128,8 +129,8 @@ func CallClaude(ctx context.Context, client *bedrock.Client, txn *mcp.Transactio
 
 	out, err := client.Reasoning.InvokeModel(ctx, &bedrockruntime.InvokeModelInput{
 		ModelId:     &client.ClaudeModelID,
-		ContentType: strPtr("application/json"),
-		Accept:      strPtr("application/json"),
+		ContentType: aws.String("application/json"),
+		Accept:      aws.String("application/json"),
 		Body:        reqBody,
 	})
 	if err != nil {
@@ -202,5 +203,3 @@ func ruleBasedFallback(txn *mcp.Transaction, start time.Time) ReasoningResult {
 		return ReasoningResult{Verdict: "legit", Confidence: 0.85, Rationale: "low risk score", Step: "fallback", LatencyMs: latencyMs}
 	}
 }
-
-func strPtr(s string) *string { return &s }

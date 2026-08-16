@@ -6,6 +6,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -49,7 +50,26 @@ func LoadPolicy(ctx context.Context, db *cockroach.Client) RuntimePolicy {
 	err := db.Pool.QueryRow(ctx,
 		`SELECT risk_low, risk_high, fallback_action FROM system_policy WHERE id = 1`,
 	).Scan(&low, &high, &fallback)
-	if err == nil && low >= 0 && high <= 1 && low < high {
+	switch {
+	case cockroach.ShouldWarn(err):
+		// A transient DB error here is silent by design at the call site (the
+		// fleet must never stall on a policy read), but silent must not mean
+		// invisible: a long-lived error would otherwise run the whole fleet on
+		// compiled-in defaults for hours with nothing in the logs to explain why.
+		// system_policy not existing yet (ShouldWarn excludes it, via
+		// IsColdStartMiss) is not this: the table is created lazily by
+		// dashboard-api, so every agent-worker seeing it missing before anyone
+		// has opened the dashboard is normal, not a fault — and without that
+		// carve-out this logged on every single task, every policyTTL,
+		// fleet-wide, for the entirely expected cold-start window (the same
+		// classification budget.Exceeded applies to the same table, for the
+		// same reason - see cockroach.ShouldWarn's doc).
+		fmt.Printf("[warn] LoadPolicy: reading system_policy failed, using defaults: %v\n", err)
+	case err != nil:
+		// Cold-start miss: fall through silently to defaults below.
+	case !(low >= 0 && high <= 1 && low < high):
+		fmt.Printf("[warn] LoadPolicy: system_policy has out-of-range thresholds (low=%v high=%v), using defaults\n", low, high)
+	default:
 		p.RiskLow, p.RiskHigh = low, high
 		if fallback == "requeue" || fallback == "escalate" {
 			p.FallbackAction = fallback

@@ -16,20 +16,24 @@ import (
 	"encoding/json"
 	"log"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	awspricing "github.com/aws/aws-sdk-go-v2/service/pricing"
 	pricingtypes "github.com/aws/aws-sdk-go-v2/service/pricing/types"
+	"github.com/lethingochan27925/hivemind/internal/budget"
+	"github.com/lethingochan27925/hivemind/internal/cache"
 )
 
 // Gia fallback (USD / 1K token) - Claude Haiku, khop voi bang gia cong bo.
-// Chi duoc dung khi Pricing API khong tra loi duoc.
+// Chi duoc dung khi Pricing API khong tra loi duoc. Alias thang toi
+// internal/budget - noi duy nhat khai bao con so gia - de ba noi dung gia
+// (guardrail ngan sach, con so tinh o day, va gia song khi Pricing API sap)
+// khong the lech nhau vi mot noi doi gia con hai noi kia quen.
 const (
-	fallbackInPer1K  = 0.00025
-	fallbackOutPer1K = 0.00125
+	fallbackInPer1K  = budget.ClaudeInputCostPer1K
+	fallbackOutPer1K = budget.ClaudeOutputCostPer1K
 
 	cacheTTL = 12 * time.Hour
 	// Fallback chi cache ngan: mot lan truot mang khong duoc phep ghim
@@ -52,23 +56,29 @@ func (p Prices) Estimate(tokensIn, tokensOut int) float64 {
 	return float64(tokensIn)/1000.0*p.InPer1K + float64(tokensOut)/1000.0*p.OutPer1K
 }
 
-var (
-	mu        sync.Mutex
-	cached    Prices
-	fetchedAt time.Time
-)
+var priceCache = cache.NewTTL[Prices](cacheTTL)
 
 // Get tra ve don gia cho model dang dung, tai region dang chay.
 // An toan goi thuong xuyen: ket qua cache 12h, loi thi ve fallback ngay.
 func Get(ctx context.Context, modelID, regionCode string) Prices {
-	mu.Lock()
-	defer mu.Unlock()
-	if !fetchedAt.IsZero() && time.Since(fetchedAt) < cacheTTL {
-		return cached
+	// fetchPrices khong bao gio tra error (moi nhanh deu tra ve mot Prices hop
+	// le - toi thieu la fallback tinh), nen error o day chi con y nghia phong
+	// thu - bo qua va dung fallback truc tiep neu cache.TTL vi ly do nao do
+	// van truyen no ra.
+	p, err := priceCache.Get(func() (Prices, time.Duration, error) {
+		// Background, khong dung ctx cua request: cache.TTL giu khoa xuyen
+		// suot fetch nay, nen moi request dong thoi mien cache deu dung
+		// chung DUNG MOT lan goi Pricing API - no khong duoc phep bi huy chi
+		// vi request dau tien kich hoat no da bi nguoi goi bo giua chung.
+		return fetchPrices(context.Background(), modelID, regionCode)
+	})
+	if err != nil {
+		return Prices{InPer1K: fallbackInPer1K, OutPer1K: fallbackOutPer1K, Source: "static", Model: modelID}
 	}
+	return p
+}
 
-	fallback := Prices{InPer1K: fallbackInPer1K, OutPer1K: fallbackOutPer1K, Source: "static", Model: modelID}
-
+func fetchPrices(ctx context.Context, modelID, regionCode string) (Prices, time.Duration, error) {
 	in, out, _ := fetchFromAPI(ctx, modelID, regionCode)
 	if in == 0 && out == 0 && regionCode != "us-east-1" {
 		// Catalog khong liet ke model o region nay (ap-southeast-1: 90 SKU,
@@ -78,8 +88,7 @@ func Get(ctx context.Context, modelID, regionCode string) Prices {
 	}
 	switch {
 	case in > 0 && out > 0:
-		cached = Prices{InPer1K: in, OutPer1K: out, Source: "aws-pricing-api", Model: modelID}
-		fetchedAt = time.Now()
+		return Prices{InPer1K: in, OutPer1K: out, Source: "aws-pricing-api", Model: modelID}, 0, nil
 	case in > 0 || out > 0:
 		// Thuc te do duoc (14/08/2026): catalog chi co SKU input cho Claude 3
 		// Haiku, khong ton tai SKU output. Chieu nao co thi dung gia song,
@@ -91,14 +100,15 @@ func Get(ctx context.Context, modelID, regionCode string) Prices {
 			out = fallbackOutPer1K
 		}
 		log.Printf("[pricing] catalog partial cho %s: dung hybrid (thieu mot chieu)", modelID)
-		cached = Prices{InPer1K: in, OutPer1K: out, Source: "hybrid", Model: modelID}
-		fetchedAt = time.Now()
+		return Prices{InPer1K: in, OutPer1K: out, Source: "hybrid", Model: modelID}, 0, nil
 	default:
+		// fallbackTTL, khong phai cacheTTL mac dinh: mot lan truot mang khong
+		// duoc phep ghim nhan "static" suot nua ngay - lan goi ke tiep thu
+		// lai Pricing API som hon nhieu.
 		log.Printf("[pricing] khong khop SKU token nao cho %s - dung gia niem yet", modelID)
-		cached = fallback
-		fetchedAt = time.Now().Add(fallbackTTL - cacheTTL)
+		fallback := Prices{InPer1K: fallbackInPer1K, OutPer1K: fallbackOutPer1K, Source: "static", Model: modelID}
+		return fallback, fallbackTTL, nil
 	}
-	return cached
 }
 
 func fetchFromAPI(ctx context.Context, modelID, regionCode string) (float64, float64, bool) {

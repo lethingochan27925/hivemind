@@ -71,6 +71,7 @@ module "lambda" {
   image_uris         = local.image_uris
   role_arns          = module.iam.role_arns
   log_retention_days = var.lambda_log_retention_days
+  dlq_arn            = module.iam.async_dlq_arn
 
   common_env = {
     PROJECT                  = var.project
@@ -115,7 +116,7 @@ module "lambda" {
     "dispatcher" = {
       timeout_seconds      = var.dispatcher_timeout_seconds
       memory_mb            = var.dispatcher_memory_mb
-      reserved_concurrency = 1
+      reserved_concurrency = var.dispatcher_reserved_concurrency
       environment = {
         DISPATCHER_BATCH_SIZE         = tostring(var.dispatcher_batch_size)
         DISPATCHER_MAX_WORKER_INVOKES = tostring(var.dispatcher_max_worker_invokes)
@@ -126,7 +127,7 @@ module "lambda" {
     "reaper" = {
       timeout_seconds      = var.reaper_timeout_seconds
       memory_mb            = var.reaper_memory_mb
-      reserved_concurrency = 1
+      reserved_concurrency = var.reaper_reserved_concurrency
       environment = {
         REAPER_STUCK_THRESHOLD_SECONDS = tostring(var.reaper_stuck_threshold_seconds)
       }
@@ -135,7 +136,7 @@ module "lambda" {
     "salience-decay" = {
       timeout_seconds      = var.salience_decay_timeout_seconds
       memory_mb            = var.salience_decay_memory_mb
-      reserved_concurrency = 1
+      reserved_concurrency = var.salience_decay_reserved_concurrency
       environment          = {}
     }
 
@@ -143,7 +144,11 @@ module "lambda" {
       timeout_seconds      = var.review_api_timeout_seconds
       memory_mb            = var.review_api_memory_mb
       reserved_concurrency = -1
-      environment          = {}
+      environment = {
+        CONTROL_TOKEN = var.control_token
+        GITHUB_REPO   = var.github_repo
+        GITHUB_TOKEN  = var.github_token
+      }
     }
   }
 
@@ -180,8 +185,12 @@ module "github_oidc" {
   project     = var.project
   environment = var.environment
 
-  github_repo    = var.github_repo
-  tfstate_bucket = "hivemind-tfstate-375916766707"
+  github_repo = var.github_repo
+  # Derived, not hardcoded: must stay byte-identical to modules/bootstrap's
+  # own bucket_name formula ("${var.project}-tfstate-${account_id}") or the
+  # OIDC role's S3 permissions silently scope to a bucket that doesn't match
+  # the one actually configured as the backend in versions.tf.
+  tfstate_bucket = "${var.project}-tfstate-${data.aws_caller_identity.current.account_id}"
 
   common_tags = {
     Project     = var.project
@@ -194,8 +203,10 @@ module "monitoring" {
   project     = var.project
   environment = var.environment
 
-  alert_email           = var.alert_email
-  billing_threshold_usd = var.billing_threshold_usd
-  function_names        = local.function_names
-  metrics_namespace     = module.iam.metrics_namespace
+  alert_email                = var.alert_email
+  billing_threshold_usd      = var.billing_threshold_usd
+  function_names             = local.function_names
+  metrics_namespace          = module.iam.metrics_namespace
+  bedrock_model_id           = var.bedrock_model_id
+  bedrock_embedding_model_id = var.bedrock_embedding_model_id
 }

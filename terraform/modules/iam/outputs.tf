@@ -12,3 +12,8 @@ output "metrics_namespace" {
   description = "CloudWatch namespace cho custom metrics"
   value       = local.metrics_namespace
 }
+
+output "async_dlq_arn" {
+  description = "SQS queue ARN cho failed async Lambda invocations (EventBridge, dispatcher fan-out)"
+  value       = aws_sqs_queue.async_dlq.arn
+}

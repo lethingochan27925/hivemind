@@ -12,6 +12,8 @@
 #   - alias `live` co ignore_changes trong Terraform, nen sau khi push image
 #     phai update-function-code --publish roi update-alias thu cong.
 set -euo pipefail
+export AWS_PAGER="" # AWS CLI v2 pipes output through `less` by default when
+                     # stdout is a terminal - never useful in a script.
 cd "$(dirname "$0")/.."
 
 # Tu nap AWS credentials tu .env neu shell chua co (terminal moi khong can source truoc)
@@ -32,6 +34,25 @@ ENVIRONMENT="${ENVIRONMENT:-dev}"
 REGION="${AWS_DEFAULT_REGION:-ap-southeast-1}"
 ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
 REG="${ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com"
+
+# This script updates an alias straight to 100% - no canary, no CloudWatch
+# check, unlike .github/workflows/deploy-canary.yml. Fine for "dev" (this
+# script's whole reason to exist is a fast local loop there); running it
+# against anything else deploys untested code directly to real traffic, so it
+# stops and asks unless the environment is explicitly acknowledged.
+if [ "$ENVIRONMENT" != "dev" ]; then
+  if [ -t 0 ] && [ "${CONFIRM_DEPLOY:-}" != "1" ]; then
+    read -r -p "ENVIRONMENT=$ENVIRONMENT — this deploys straight to 100%, no canary. Continue? [y/N] " reply
+    case "$reply" in
+      [yY]|[yY][eE][sS]) ;;
+      *) echo "[ABORT] Not confirmed."; exit 1 ;;
+    esac
+  elif [ "${CONFIRM_DEPLOY:-}" != "1" ]; then
+    echo "[ERROR] ENVIRONMENT=$ENVIRONMENT and no TTY to confirm interactively."
+    echo "        Set CONFIRM_DEPLOY=1 to proceed non-interactively (e.g. from a script)."
+    exit 1
+  fi
+fi
 
 # service -> duong dan cmd/ (scoring-python co Dockerfile rieng)
 declare -A CMD_PATH=(

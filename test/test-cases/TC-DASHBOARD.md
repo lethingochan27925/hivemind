@@ -16,6 +16,8 @@ Traces to: **Real-World Impact, Production Readiness** (observability). Manual/e
 | **TC-DASH-10** | Routing/reload | Deep-link to `/architecture` and hard-reload. | Page loads (CloudFront rewrites extensionless URI → `.html`); no 403. |
 | **TC-DASH-11** | Resilience of UI | Point the app at an unreachable API. | Pages show empty/disconnected states, not blank crashes (null-guards hold). |
 | **TC-DASH-12** | Theme / responsiveness | Resize to mobile; toggle theme. | Layout reflows; no horizontal body scroll; ops-console dark palette holds. |
+| **TC-DASH-13** | Training Lab (`/training`) | Ingest a batch, run a training run of 2–3 batches, then approve/reject a case from the Review Queue while it's live. | Each batch reports memory formation, decision mix and cost; the run is saved to CockroachDB and appears under Saved runs; the human review is embedded into `case_memory` (see TC-MEMOPS) — the page never fine-tunes model weights, and says so. |
+| **TC-DASH-14** | Pipeline (`/pipeline`) | Load the page twice within 30s from two tabs. | Both loads show the same GitHub Actions run state; the second load does not trigger a second upstream GitHub call (server-side 30s shared cache) — confirm via response timing or server logs, not just the UI. |
 
 ## Design-intent checks (from the brief)
 

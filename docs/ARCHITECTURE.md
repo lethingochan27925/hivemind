@@ -39,6 +39,9 @@ Three independent failure modes, three mechanisms — all resolved in the databa
 | **Two agents grab the same task** | `SELECT … FOR UPDATE SKIP LOCKED` on the claim | Exactly-once claim; `tasks.transaction_id` is `UNIQUE`, so a transaction can never be held twice. |
 | **An agent crashes mid-investigation** | `heartbeat_at` + Heartbeat Reaper (30s) | Stale task re-queues; a new worker reads `step` + `scratchpad` (JSONB) and **resumes at the same step**, not from scratch. |
 | **A whole region goes down** | CockroachDB multi-region consensus | Writes continue on the surviving regions with **RPO = 0**; no audit gap, no lost verdict. |
+| **An async invocation exhausts its retries** | SQS dead-letter queue (`async_dlq`, `terraform/modules/iam`), wired via `on_failure` destination on every asynchronously-invoked function (`agent-worker`, `dispatcher`, `reaper`, `salience-decay`) | A failure that survives Lambda's own retry budget sits visibly in a queue instead of vanishing with nothing in any log to say the invocation itself never ran. Deliberately **not** wired to `scoring-api`/`scoring-python`/`dashboard-api` — those are called synchronously over Function URL, and an async destination is a documented no-op for a synchronous invocation. |
+
+CloudWatch also watches the two failure modes with no request-scoped signal to catch them: a `Bedrock` alarm on `InvocationThrottles` per model ID (Claude + Titan), and the canary's own alarm-history check (not just a final-state poll) during its observation window — see [CI/CD](CICD.md#the-canary).
 
 ## Why the boundaries are where they are
 

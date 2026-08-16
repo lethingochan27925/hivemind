@@ -94,6 +94,7 @@ make scorecard               # + write evidence/SCORECARD.md and scorecard.json
 make evidence                # capture SQL results, logs and state into evidence/ and S3
 make evidence L=crash-test   # label the capture for a specific scenario
 make experiment N=60 M=8     # controlled A/B on episodic memory
+make memory-restore          # undo an experiment's cold start: unarchive everything
 make regions                 # multi-region status of the database
 ```
 
@@ -113,6 +114,7 @@ make gen-edge                  # adversarial rows: injection, unicode, arithmeti
 make tf-plan       # preview
 make tf-apply      # apply
 make iam           # re-apply only the dashboard-api IAM policy (fast path when adding a permission)
+make unlock        # break a stale Terraform state lock (only if it's genuinely stuck, >20 minutes old)
 make destroy       # tear down AWS resources; the CockroachDB cluster is left alone
 ```
 

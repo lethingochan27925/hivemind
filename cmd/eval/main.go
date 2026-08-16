@@ -28,6 +28,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/lethingochan27925/hivemind/internal/budget"
 )
 
 type queryResult struct {
@@ -148,11 +150,6 @@ type scorecard struct {
 	CostPerCase float64 `json:"estimated_cost_usd_per_investigation"`
 	CostPer500  float64 `json:"estimated_cost_usd_per_500_case_run"`
 }
-
-const (
-	inputCostPer1K  = 0.00025
-	outputCostPer1K = 0.00125
-)
 
 func main() {
 	api := flag.String("api", os.Getenv("HIVEMIND_API"), "dashboard-api base URL")
@@ -295,7 +292,7 @@ func main() {
 	if len(qr.Rows) > 0 {
 		sc.TokensIn, sc.TokensOut = int(num(qr.Rows[0][0])), int(num(qr.Rows[0][1]))
 	}
-	sc.CostUSD = float64(sc.TokensIn)/1000*inputCostPer1K + float64(sc.TokensOut)/1000*outputCostPer1K
+	sc.CostUSD = budget.EstimateCost(sc.TokensIn, sc.TokensOut)
 	if decisions := sc.ModelDecisions + sc.FallbackVerdict; decisions > 0 {
 		sc.CostPerCase = sc.CostUSD / float64(decisions)
 		sc.CostPer500 = sc.CostPerCase * 500

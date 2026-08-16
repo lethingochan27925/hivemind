@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { api } from "@/lib/api";
-import { useLive } from "@/lib/use-live";
 import { useFleet } from "@/lib/use-fleet";
+import { useInfrastructure } from "@/lib/use-infrastructure";
+import { useCost } from "@/lib/use-cost";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { LangToggle } from "@/components/layout/lang-toggle";
 import { useT } from "@/lib/i18n";
@@ -17,8 +17,8 @@ import { Command, CircleDot, AlertTriangle, DollarSign } from "lucide-react";
 export function Topbar() {
   const t = useT();
   const fleet = useFleet();
-  const infra = useLive(api.getInfrastructure, 20000);
-  const cost = useLive(api.getCost, 60000);
+  const infra = useInfrastructure();
+  const cost = useCost();
 
   const running = fleet.data?.running ?? false;
   const tasks = fleet.data?.tasks ?? {};
@@ -27,11 +27,14 @@ export function Topbar() {
   const alarms = (infra.data?.services ?? []).filter((s) => s.alarm_state === "ALARM").length;
   const spend = cost.data?.estimated_cost_usd_today;
 
+  // shrink-0 on every chip: without it a narrow viewport squeezed each chip's
+  // text instead of the whole row scrolling, and past a point the chips lost
+  // their icon/text spacing entirely rather than just running off-screen.
   const chip =
-    "flex items-center gap-1.5 px-2.5 h-7 rounded-md border text-[12px] transition-colors";
+    "flex items-center gap-1.5 px-2.5 h-7 rounded-md border text-[12px] transition-colors shrink-0";
 
   return (
-    <header className="h-11 shrink-0 border-b border-border bg-bg-panel/70 backdrop-blur flex items-center gap-2 px-4 sticky top-0 z-40">
+    <header className="h-11 shrink-0 border-b border-border bg-bg-panel/70 backdrop-blur flex items-center gap-2 px-4 sticky top-0 z-40 overflow-x-auto">
       {/* Fleet state */}
       <Link
         href="/"
@@ -75,7 +78,7 @@ export function Topbar() {
       {/* Spend today */}
       <Link href="/cost" className={`${chip} border-border bg-bg-inset/50 text-text-secondary hover:text-text-primary`}>
         <DollarSign size={11} className="text-green" />
-        <span className="tnum">{spend != null ? `$${spend.toFixed(4)}` : "—"}</span> {t("today")}
+        <span className="tnum">{spend != null ? `$${spend.toFixed(4)}` : "-"}</span> {t("today")}
       </Link>
 
       <span className="ml-auto" />

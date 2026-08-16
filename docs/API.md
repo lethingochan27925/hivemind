@@ -12,8 +12,8 @@ API=$(terraform -chdir=terraform output -raw dashboard_api_url); API="${API%/}"
 |--------|------|---------|
 | GET | `/overview` | Verdict counts today, pending reviews, memory-hit trend, **learning curve**, live tasks, verdict accuracy |
 | GET | `/reviews` | Escalated tasks awaiting a human decision |
-| POST | `/reviews/decide` | Record one `approved`/`rejected` decision → `human_reviewed` audit row |
-| POST | `/reviews/bulk` | Decide up to 500 cases at once (reviewer name required) |
+| POST | `/reviews/decide` | Record one `approved`/`rejected` decision → `human_reviewed` audit row, embedded and **pinned** into `case_memory` (salience 2.0) |
+| POST | `/reviews/bulk` | Decide up to 500 cases at once (reviewer name required); each one teaches the fleet the same way `/reviews/decide` does — response includes `memory_learned` alongside `decided`/`failed` |
 | GET | `/memory` | Episodic stats: active/archived, avg salience, top patterns, active agents, recall impact |
 | GET | `/transactions?risk_tier=` | Recent transactions, optionally filtered `low`/`medium`/`high` |
 | GET | `/transactions/{id}/audit` | Full decision trail: action, agent, reasoning, **memory_hits + similarity_scores**, tokens, latency, `bedrock_model` |
@@ -91,7 +91,7 @@ curl -s -XPOST "${hdr[@]}" -d '{"job":"decay"}' "$API/control/memory/job"
 | Method | Path | Body | Effect |
 |--------|------|------|--------|
 | POST | `/control/task` | `{"action":"requeue","task_id":"…"}` | Hand a case back to the fleet (accepts task **or** transaction id) |
-| POST | `/control/task` | `{"action":"override","task_id":"…","verdict":"fraud","reviewer_id":"ops","notes":"…"}` | Operator override + `human_reviewed` audit row |
+| POST | `/control/task` | `{"action":"override","task_id":"…","verdict":"fraud","reviewer_id":"ops","notes":"…"}` | Operator override + `human_reviewed` audit row, embedded and **pinned** into `case_memory` the same way a Review Queue decision is |
 
 ## Infrastructure & delivery
 
@@ -102,6 +102,7 @@ curl -s -XPOST "${hdr[@]}" -d '{"job":"decay"}' "$API/control/memory/job"
 | GET | `/control/regions` | Database regions + survival goal |
 | POST | `/control/regions` | `{"action":"add"\|"drop"\|"set_primary"\|"survive_region"\|"survive_zone","region":"aws-ap-south-1"}` |
 | POST | `/control/rollback` | `{"service":"dashboard-api"}` → moves alias `live` to the previous version |
+| GET | `/control/pipeline` | Proxies GitHub Actions run state for the Pipeline page (cached 30s server-side) — every viewer shares one upstream rate-limit budget instead of spending their own browser's IP; see `internal/dashboardapi/pipeline.go` |
 
 ## Database console
 

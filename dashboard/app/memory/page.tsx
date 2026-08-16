@@ -12,11 +12,13 @@ import { MemoryAdmin } from "@/components/control/memory-admin";
 import { MemoryHealth } from "@/components/control/memory-health";
 import { BarList } from "@/components/charts/bar-list";
 import { Database, Archive, Gauge, Target } from "lucide-react";
+import { useT } from "@/lib/i18n";
 
 const prettyPattern = (s: string) =>
   s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
 export default function MemoryPage() {
+  const t = useT();
   const { data, error, loading, lastUpdated } = useLive(api.getMemory, 8000);
   const stats = data?.stats;
   const impact = data?.impact;
@@ -109,7 +111,7 @@ export default function MemoryPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="rounded-md border border-border bg-bg-inset px-3 py-3">
                     <div className="text-[12px] uppercase tracking-wide text-text-tertiary">
-                      With memory hit
+                      {t("With memory hit")}
                     </div>
                     <div className="tnum text-2xl font-semibold text-green mt-1">
                       {Math.round(withHit)}
@@ -118,7 +120,7 @@ export default function MemoryPage() {
                   </div>
                   <div className="rounded-md border border-border bg-bg-inset px-3 py-3">
                     <div className="text-[12px] uppercase tracking-wide text-text-tertiary">
-                      Cold (no hit)
+                      {t("Cold (no hit)")}
                     </div>
                     <div className="tnum text-2xl font-semibold text-text-secondary mt-1">
                       {Math.round(noHit)}
@@ -130,12 +132,12 @@ export default function MemoryPage() {
                   <p className="text-[13px] text-text-secondary">
                     {speedup > 0 ? (
                       <>
-                        Recalling a prior case resolves an investigation{" "}
-                        <span className="text-green font-medium">{speedup}% faster</span> - memory
-                        turns investigation cost into an accumulating asset.
+                        {t("Recalling a prior case resolves an investigation")}{" "}
+                        <span className="text-green font-medium">{t("{p}% faster").replace("{p}", String(speedup))}</span>{" "}
+                        {t("- memory turns investigation cost into an accumulating asset.")}
                       </>
                     ) : (
-                      <>Latency is comparable with and without recall on the current sample.</>
+                      <>{t("Latency is comparable with and without recall on the current sample.")}</>
                     )}
                   </p>
                 )}
@@ -165,10 +167,10 @@ export default function MemoryPage() {
               <table className="w-full text-[14px]">
                 <thead>
                   <tr className="text-left text-text-tertiary border-b border-border">
-                    <th className="pb-2 font-normal">Agent</th>
-                    <th className="pb-2 font-normal">Status</th>
-                    <th className="pb-2 font-normal">Current task</th>
-                    <th className="pb-2 font-normal text-right">Last activity</th>
+                    <th className="pb-2 font-normal">{t("Agent")}</th>
+                    <th className="pb-2 font-normal">{t("Status")}</th>
+                    <th className="pb-2 font-normal">{t("Current task")}</th>
+                    <th className="pb-2 font-normal text-right">{t("Last activity")}</th>
                   </tr>
                 </thead>
                 <tbody>

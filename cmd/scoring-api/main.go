@@ -11,6 +11,7 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/awslabs/aws-lambda-go-api-proxy/httpadapter"
@@ -69,7 +70,7 @@ func resolveScoringEndpoint() string {
 
 	client := ssm.NewFromConfig(cfg)
 	out, err := client.GetParameter(context.Background(), &ssm.GetParameterInput{
-		Name: strPtr(ssmPrefix + "/scoring/python_endpoint"),
+		Name: aws.String(ssmPrefix + "/scoring/python_endpoint"),
 	})
 	if err != nil {
 		log.Printf("reading scoring endpoint from SSM: %v, falling back to localhost", err)
@@ -78,8 +79,6 @@ func resolveScoringEndpoint() string {
 
 	return *out.Parameter.Value
 }
-
-func strPtr(s string) *string { return &s }
 
 // newScoringClient chon che do xac thuc theo moi truong: local goi thang service
 // Python khong qua IAM; tren Lambda thi Function URL cua scoring-python dung auth

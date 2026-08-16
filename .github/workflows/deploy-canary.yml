@@ -94,9 +94,19 @@ jobs:
           echo "canary started: ${CANARY_WEIGHT} of traffic -> version ${{ steps.info.outputs.new_version }}"
 
       - name: Observe
+        id: observe
         if: steps.info.outputs.changed == 'true'
-        run: sleep "${CANARY_WAIT_SECONDS}"
+        run: |
+          echo "started_at=$(date -u +%Y-%m-%dT%H:%M:%S)" >> "$GITHUB_OUTPUT"
+          sleep "${CANARY_WAIT_SECONDS}"
 
+      # Reading only the alarm's CURRENT state after the wait misses a canary
+      # that tripped ALARM mid-window and had already recovered to OK by the
+      # time this step ran — describe-alarms alone would read that as a clean
+      # canary. describe-alarm-history is queried for any state transition
+      # INTO alarm during the observation window; catching that is the whole
+      # reason this step waits instead of checking immediately after the
+      # traffic shift.
       - name: Read the CloudWatch error alarm
         id: check
         if: steps.info.outputs.changed == 'true'
@@ -113,8 +123,22 @@ jobs:
             echo "alarm_state=MISSING" >> "$GITHUB_OUTPUT"
             exit 1
           fi
+
+          TRIPPED=$(aws cloudwatch describe-alarm-history \
+            --alarm-name "$ALARM_NAME" \
+            --history-item-type StateUpdate \
+            --start-date "${{ steps.observe.outputs.started_at }}" \
+            --query "length(AlarmHistoryItems[?contains(HistorySummary, 'to ALARM')])" \
+            --output text)
+
+          if [ "$TRIPPED" != "0" ]; then
+            echo "::error::alarm $ALARM_NAME entered ALARM during the observation window (now reads $STATE) — treating as failed"
+            echo "alarm_state=ALARM" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           echo "alarm_state=$STATE" >> "$GITHUB_OUTPUT"
-          echo "  $ALARM_NAME: $STATE"
+          echo "  $ALARM_NAME: $STATE (no ALARM transitions during the window)"
 
       # OK and INSUFFICIENT_DATA both promote. INSUFFICIENT_DATA is the normal
       # resting state of an error-count alarm on a low-traffic function — it

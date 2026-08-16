@@ -87,9 +87,21 @@ func (s *Server) learnHumanLesson(ctx context.Context, taskID, txnID, verdict, r
 		return fmt.Errorf("loading transaction %s: %w", txnID, err)
 	}
 
-	rationale := fmt.Sprintf("Human review by %s -> %s", reviewerID, verdict)
+	// reviewerID is just as untrusted as notes - it comes from the same free-
+	// text "Reviewer name" field on the Review Queue UI (dashboard/app/reviews
+	// /page.tsx) - and is interpolated into the same rationale string that
+	// ends up embedded into case_memory.summary below, so it gets the same
+	// sanitisation. A shorter cap than notes: it is a name, not a paragraph.
+	rationale := fmt.Sprintf("Human review by %s -> %s", agent.SanitizeField(reviewerID, 100), verdict)
 	if notes != "" {
-		rationale += ": " + notes
+		// notes is free text a reviewer typed into the browser. It is about to be
+		// embedded into case_memory.summary, which every future investigation
+		// recalls verbatim into the Claude prompt (agent.formatMemoryHits) - so an
+		// unsanitised note is a durable prompt-injection vector: one bad review
+		// note would poison the fleet's reasoning on every similar case from then
+		// on. SanitizeField is the same defence already applied to name_orig /
+		// name_dest before they reach a prompt (internal/agent/validation.go).
+		rationale += ": " + agent.SanitizeField(notes, 500)
 	}
 	// Cung dinh dang summary voi agent de embedding cua bai hoc con nguoi nam
 	// chung khong gian ngu nghia voi ky uc tu hoc - recall moi tim thay chung.
@@ -131,9 +143,16 @@ func (s *Server) learnHumanLesson(ctx context.Context, taskID, txnID, verdict, r
 		log.Printf("pinning human lesson %s: %v", memID, err)
 	}
 
-	_, _ = s.DB.Pool.Exec(ctx, `
+	// Best-effort, same as the pin above - a failure here must not undo the
+	// memory write that already succeeded. Logged rather than silently
+	// discarded: this exact insert used to fail every single time against
+	// audit_log's action_ck (see migrations/003_human_lesson_audit_action.sql)
+	// with nothing anywhere to say so.
+	if _, err := s.DB.Pool.Exec(ctx, `
 		INSERT INTO audit_log (task_id, transaction_id, agent_id, action, reasoning, reviewer_id, created_at)
 		VALUES ($1, $2, 'control-plane', 'human_lesson_stored', $3, $4, now())
-	`, taskID, txnID, rationale, reviewerID)
+	`, taskID, txnID, rationale, reviewerID); err != nil {
+		log.Printf("recording human_lesson_stored for %s: %v", memID, err)
+	}
 	return nil
 }

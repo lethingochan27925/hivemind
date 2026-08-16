@@ -5,7 +5,7 @@ project     = "hivemind"
 environment = "dev"
 aws_region  = "ap-southeast-1"
 
-services  = ["agent-worker", "scoring-api", "scoring-python", "dispatcher", "reaper", "salience-decay", "review-api"]
+services  = ["agent-worker", "scoring-api", "scoring-python", "dispatcher", "reaper", "salience-decay", "dashboard-api"]
 image_tag = "latest"
 
 bedrock_model_id           = "anthropic.claude-3-haiku-20240307-v1:0"
@@ -32,3 +32,13 @@ scoring_api_url_auth_type = "AWS_IAM"
 
 alert_email           = "your@email.com"
 billing_threshold_usd = 50
+
+# REQUIRED for any deployment reachable outside a private demo: dashboard-api's
+# Function URL is public (auth = NONE), and this is the only thing that gates
+# mutating /control/* and /reviews/* endpoints. Pass via -var (from .env),
+# same as the other secrets - do not hardcode a real value in this file.
+# control_token = ""
+
+# Optional: raises the Pipeline page's GitHub API proxy from 60 to 5,000
+# requests/hour. A fine-grained PAT with only Actions:Read on this repo.
+# github_token = ""

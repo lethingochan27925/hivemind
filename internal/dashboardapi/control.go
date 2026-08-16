@@ -14,6 +14,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -46,11 +47,24 @@ func functionName(svc string) string { return namePrefix() + "-" + svc }
 // --- AWS clients (lazy) ------------------------------------------------------
 
 var (
+	awsClientsMu sync.Mutex
 	ebClient     *eventbridge.Client
 	lambdaClient *lambda.Client
 )
 
+// awsClients is called from every request handler that touches EventBridge or
+// Lambda, so on a Lambda container serving concurrent requests the old
+// check-then-set on ebClient/lambdaClient (no lock) was a real data race:
+// two goroutines could both see nil and both call LoadDefaultConfig, one
+// write clobbering the other's client pointer mid-use. A mutex-guarded
+// double-checked init fixes the race while still retrying on the next call if
+// LoadDefaultConfig ever fails transiently (a plain sync.Once would instead
+// wedge every future request behind that one failure for the life of the
+// container).
 func awsClients(ctx context.Context) (*eventbridge.Client, *lambda.Client, error) {
+	awsClientsMu.Lock()
+	defer awsClientsMu.Unlock()
+
 	if ebClient != nil && lambdaClient != nil {
 		return ebClient, lambdaClient, nil
 	}
@@ -352,19 +366,50 @@ func parseARN(arn string) ResourceInfo {
 	return ResourceInfo{Service: svc, Name: name, ARN: arn}
 }
 
+// billingResourceRegion is the one place this project puts anything outside
+// its home region: the billing alarm and its SNS topic
+// (terraform/modules/monitoring/main.tf) live in us-east-1 because that's the
+// only region AWS/Billing metrics ever publish to. resourcegroupstaggingapi
+// is itself regional - a client built from the Lambda's own execution region
+// (ap-southeast-1) only ever sees resources tagged there, so without this,
+// "every resource Terraform tagged Project=hivemind" quietly excluded the
+// two resources living furthest from home.
+const billingResourceRegion = "us-east-1"
+
 func (s *Server) ListResources(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	project := os.Getenv("PROJECT")
+	if project == "" {
+		project = "hivemind"
+	}
+
 	cfg, err := awsconfig.LoadDefaultConfig(ctx)
 	if err != nil {
 		http.Error(w, "failed to init aws config", http.StatusInternalServerError)
 		return
 	}
-	client := resourcegroupstaggingapi.NewFromConfig(cfg)
-
-	project := os.Getenv("PROJECT")
-	if project == "" {
-		project = "hivemind"
+	resources, err := listTaggedResources(ctx, cfg, project)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("listing resources: %v", err), http.StatusInternalServerError)
+		return
 	}
+
+	if cfg.Region != billingResourceRegion {
+		billingCfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(billingResourceRegion))
+		if err == nil {
+			// Best-effort: a transient failure to reach us-east-1 shouldn't
+			// blank the other 50+ resources the home-region scan already found.
+			if extra, err := listTaggedResources(ctx, billingCfg, project); err == nil {
+				resources = append(resources, extra...)
+			}
+		}
+	}
+
+	writeJSON(w, resources)
+}
+
+func listTaggedResources(ctx context.Context, cfg aws.Config, project string) ([]ResourceInfo, error) {
+	client := resourcegroupstaggingapi.NewFromConfig(cfg)
 
 	resources := []ResourceInfo{}
 	var token *string
@@ -374,8 +419,7 @@ func (s *Server) ListResources(w http.ResponseWriter, r *http.Request) {
 			PaginationToken: token,
 		})
 		if err != nil {
-			http.Error(w, fmt.Sprintf("listing resources: %v", err), http.StatusInternalServerError)
-			return
+			return nil, err
 		}
 		for _, m := range out.ResourceTagMappingList {
 			if m.ResourceARN != nil {
@@ -387,8 +431,7 @@ func (s *Server) ListResources(w http.ResponseWriter, r *http.Request) {
 		}
 		token = out.PaginationToken
 	}
-
-	writeJSON(w, resources)
+	return resources, nil
 }
 
 // --- GET /control/db ---------------------------------------------------------

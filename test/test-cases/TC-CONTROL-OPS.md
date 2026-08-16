@@ -49,8 +49,9 @@ Automated guards: `internal/dashboardapi/ops_test.go`, `regions_test.go`, `node_
 |----|----------|-------|----------|
 | **TC-BULK-01** | P0 | Bulk approve without `reviewer_id` | `400` — no anonymous mass approvals. |
 | **TC-BULK-02** | P0 | Bulk with 501 ids | `400` — capped at 500 per call. |
-| **TC-BULK-03** | P1 | Bulk approve 50 cases where 5 were already re-queued | `200` with `{decided: 45, failed: 5}` — partial success is reported honestly, not swallowed. |
+| **TC-BULK-03** | P1 | Bulk approve 50 cases where 5 were already re-queued | `200` with `{decided: 45, failed: 5, memory_learned: <=45}` — partial success is reported honestly, not swallowed; `memory_learned` can be lower than `decided` alone (a learning failure never turns a saved decision into a failed one, see TC-BULK-05). |
 | **TC-BULK-04** | P1 *live* | Select all → "Back to agent" | Every selected case returns to `pending`; the queue empties immediately in the UI (optimistic update) and stays empty after the next poll. |
+| **TC-BULK-05** | P1 *live* | Bulk-approve 3 cases, then query `case_memory` for `key_signals @> ARRAY['human_reviewed']` created in the last minute | 3 new pinned (salience 2.0) memories — bulk decisions teach the fleet exactly the same way TC-TASK-06's single override does, not just an audit row. |
 
 ## E. Budget guardrail (`/control/budget`)
 

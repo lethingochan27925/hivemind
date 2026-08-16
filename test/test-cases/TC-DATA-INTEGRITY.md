@@ -11,8 +11,9 @@ Traces to: **Production Readiness, Agentic Memory Design**. The database enforce
 | **TC-DI-05** | P0 | `case_memory` | `INSERT`/`UPDATE` `salience = 2.5` (or `-0.1`) | Rejected by `salience_ck (0.0–2.0)` — reinforcement/decay cannot run out of range. |
 | **TC-DI-06** | P1 | `case_memory` | `INSERT` with `verdict = 'unknown'` | Rejected by `verdict_ck`. |
 | **TC-DI-07** | P1 | `case_memory` | `INSERT` with `transaction_type = 'PAYMENT'` | Rejected by `type_ck` — only `TRANSFER|CASH_OUT` (the PaySim types that ever contain fraud). |
-| **TC-DI-08** | P0 | `audit_log` | `INSERT` with `action = 'hacked'` | Rejected by `action_ck` — only the 13 defined actions can be appended. |
+| **TC-DI-08** | P0 | `audit_log` | `INSERT` with `action = 'hacked'` | Rejected by `action_ck` — only the 14 defined actions can be appended. |
 | **TC-DI-09** | P0 | `audit_log` | `INSERT` referencing a non-existent `task_id` | Rejected by the FK — the audit trail can't reference a task that doesn't exist. |
+| **TC-DI-12** | P0 | `audit_log` | `INSERT` with `action = 'human_lesson_stored'` (the row `learnHumanLesson` writes after pinning a human-taught memory) | **Must succeed.** Regression test for a real bug: this action was missing from `action_ck` from the day the human-in-the-loop feature was written until [migration 003](../../migrations/003_human_lesson_audit_action.sql) — every such insert failed silently (`_, _ = ...Exec(...)`), so `case_memory` got the human's lesson but `audit_log` never recorded that it had. Reproduced directly against a live CockroachDB container before the fix; confirmed fixed after. |
 | **TC-DI-10** | P1 | `transactions` | `INSERT` with `type = 'DEBIT'` or `risk_tier = 'critical'` | Rejected by `type_check` / `tier_check`. |
 | **TC-DI-11** | P2 | `case_memory` | Read the vector index definition | Index is `WHERE archived = false` — archived memories are physically outside the search space (correctness *and* performance). |
 

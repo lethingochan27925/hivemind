@@ -9,6 +9,8 @@ Reproducible proof for every claim HiveMind makes. Each subdirectory is one capt
 
 Each capture lands in `evidence/<timestamp>[-label]/` with its own `INDEX.md` explaining every file, and is mirrored to the versioned S3 evidence bucket.
 
+**Reading two captures side by side:** the fleet keeps running between captures, so counters like `raw_cases_absorbed`, `recall_count`, and `merge_count` are *cumulative since the table was last emptied* — not per-run. Two captures taken hours apart with the fleet active in between will show different totals for the same claim; that is the counters doing their job, not a discrepancy. Compare captures taken back-to-back (e.g. `baseline` → `after-run` in the sequence below) when the point is to isolate the effect of one specific run.
+
 ## Claim → file map
 
 | Claim in README / SUBMISSION | Evidence file | How to read it |

@@ -15,6 +15,8 @@ import (
 	"math/rand"
 	"net/http"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 type ingestResult struct {
@@ -75,13 +77,25 @@ func (s *Server) IngestData(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	res := ingestResult{Status: "ok", Seed: body.Seed}
 
+	// Pipeline all rows in one round trip (pgx.Batch) instead of up to 300
+	// sequential Exec calls - this is a synchronous HTTP handler the Training
+	// Lab UI polls while waiting on, so 300 round trips to CockroachDB Cloud
+	// was directly the time a user stared at a spinner for.
+	txns := make([]synthTxn, body.Count)
+	batch := &pgx.Batch{}
 	for i := 0; i < body.Count; i++ {
 		txn := synthesise(rng, rng.Float64() < body.FraudRate)
-		if _, err := s.DB.Pool.Exec(ctx, ingestSQL,
+		txns[i] = txn
+		batch.Queue(ingestSQL,
 			txn.step, txn.txType, txn.amount, txn.nameOrig, txn.oldOrig, txn.newOrig,
 			txn.nameDest, txn.oldDest, txn.newDest, txn.errOrig, txn.errDest,
-			txn.risk, txn.isFraud,
-		); err != nil {
+			txn.risk, txn.isFraud)
+	}
+
+	br := s.DB.Pool.SendBatch(ctx, batch)
+	for _, txn := range txns {
+		if _, err := br.Exec(); err != nil {
+			br.Close()
 			http.Error(w, fmt.Sprintf("ingest failed after %d rows: %v", res.Inserted, err), http.StatusInternalServerError)
 			return
 		}
@@ -91,6 +105,10 @@ func (s *Server) IngestData(w http.ResponseWriter, r *http.Request) {
 		} else {
 			res.Legit++
 		}
+	}
+	if err := br.Close(); err != nil {
+		http.Error(w, fmt.Sprintf("ingest batch close failed after %d rows: %v", res.Inserted, err), http.StatusInternalServerError)
+		return
 	}
 
 	_ = s.DB.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM tasks WHERE status = 'pending'`).Scan(&res.QueuedNow)

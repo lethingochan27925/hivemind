@@ -9,6 +9,8 @@
 # tri nao duoc go tay, nen thu muc nay la bang chung tai lap duoc, khong phai
 # anh chup man hinh.
 set -uo pipefail
+export AWS_PAGER="" # AWS CLI v2 pipes output through `less` by default when
+                     # stdout is a terminal - never useful in a script.
 cd "$(dirname "$0")/.."
 
 if [ -z "${AWS_ACCESS_KEY_ID:-}" ] && [ -f .env ]; then

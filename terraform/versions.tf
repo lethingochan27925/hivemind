@@ -10,6 +10,10 @@ terraform {
 
   # tls  -- da bo: chi dung cho EKS OIDC thumbprint
   # archive -- da bo: Lambda dung container image tu ECR, khong dung zip
+  # null -- khong khai bao tuong minh, Terraform tu suy ra tu
+  #   resource "null_resource" "billing_alarm" (modules/monitoring/main.tf),
+  #   giong cach tls duoc suy ra tu data "tls_certificate" ma khong can khai
+  #   trong required_providers.
 
   backend "s3" {
     bucket       = "hivemind-tfstate-375916766707"
@@ -31,3 +35,10 @@ provider "aws" {
     }
   }
 }
+
+# No aws.billing provider alias here. The billing alarm needs the AWS/Billing
+# "EstimatedCharges" metric, which only ever publishes in us-east-1 - but
+# reaching it turned out to need working around a provider gap rather than
+# just pointing a provider block at the right region. See the long comment on
+# null_resource.billing_alarm in modules/monitoring/main.tf for what was
+# tried and why.

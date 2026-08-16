@@ -41,6 +41,58 @@ func TestTransactionRiskScoreInvalid(t *testing.T) {
 	}
 }
 
+// TestSQLQuoteLiteral checks the escaping the tools fall back to when
+// interpolating untrusted strings into the single opaque SQL string the MCP
+// select_query tool accepts (no bind-parameter slot exists in that protocol).
+func TestSQLQuoteLiteral(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"C1234567", "C1234567"},
+		{"O'Brien", "O''Brien"},
+		{"x'; DROP TABLE tasks; --", "x''; DROP TABLE tasks; --"},
+		{"' OR '1'='1", "'' OR ''1''=''1"},
+	}
+	for _, c := range cases {
+		if got := sqlQuoteLiteral(c.in); got != c.want {
+			t.Errorf("sqlQuoteLiteral(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// TestGetTransactionRejectsInvalidID: a non-UUID id must be rejected before it
+// ever reaches query construction — proven here by calling it against a Tools
+// with a nil client. If validation did not run first, this would panic on the
+// nil client instead of returning a clean error, which is exactly the signal
+// this test is designed to catch.
+func TestGetTransactionRejectsInvalidID(t *testing.T) {
+	tools := NewTools(nil)
+	for _, id := range []string{
+		"",
+		"not-a-uuid",
+		"C7'; DROP TABLE tasks; --",
+		"11111111-1111-1111-1111-111111111111' OR '1'='1",
+	} {
+		if _, err := tools.GetTransaction(id); err == nil {
+			t.Errorf("GetTransaction(%q): expected error for non-UUID id, got nil", id)
+		}
+	}
+	if !isValidUUID("11111111-1111-1111-1111-111111111111") {
+		t.Error("a well-formed UUID must pass validation")
+	}
+}
+
+// TestSearchSimilarCasesRejectsInvalidEnum: transaction_type/verdict are
+// CHECK-constrained enums; anything outside the known set must be rejected
+// before query construction, same nil-client proof as above.
+func TestSearchSimilarCasesRejectsInvalidEnum(t *testing.T) {
+	tools := NewTools(nil)
+	if _, err := tools.SearchSimilarCases("DROP TABLE tasks", "small", "", 5); err == nil {
+		t.Error("expected error for invalid transaction type, got nil")
+	}
+	if _, err := tools.SearchSimilarCases("TRANSFER", "small", "not-a-verdict", 5); err == nil {
+		t.Error("expected error for invalid verdict filter, got nil")
+	}
+}
+
 func TestTransactionFullDecode(t *testing.T) {
 	raw := `{"id":"t1","step":5,"type":"TRANSFER","amount":450000,
 	         "name_orig":"C1","old_balance_orig":450000,"new_balance_orig":0,

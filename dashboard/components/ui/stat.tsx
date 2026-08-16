@@ -1,4 +1,5 @@
 import { ReactNode } from "react";
+import { useT } from "@/lib/i18n";
 
 type Tone = "default" | "blue" | "green" | "yellow" | "red" | "purple" | "teal";
 
@@ -28,7 +29,7 @@ const toneBar: Record<Tone, string> = {
  *
  * `loading` matters more than it looks: without it a KPI renders a hard `0` while
  * the first request is still in flight, so a healthy but idle system and a system
- * that cannot reach its API look identical — five confident zeroes either way.
+ * that cannot reach its API look identical - five confident zeroes either way.
  */
 export function Stat({
   label,
@@ -47,12 +48,13 @@ export function Stat({
   icon?: ReactNode;
   loading?: boolean;
 }) {
+  const t = useT();
   return (
     <div className="relative flex flex-col gap-2 px-5 py-5">
       <span className={`absolute left-0 top-5 bottom-5 w-1 rounded-full ${toneBar[color]}`} />
       <div className="flex items-center gap-2 text-[13px] font-medium text-text-secondary">
         {icon}
-        <span className="uppercase tracking-wide">{label}</span>
+        <span className="uppercase tracking-wide">{t(label)}</span>
       </div>
       {loading ? (
         <div className="h-[40px] flex items-center">
@@ -66,7 +68,7 @@ export function Stat({
           {unit && <span className="text-base text-text-tertiary font-medium">{unit}</span>}
         </div>
       )}
-      {hint && <span className="text-[12px] text-text-tertiary">{hint}</span>}
+      {hint && <span className="text-[12px] text-text-tertiary">{t(hint)}</span>}
     </div>
   );
 }

@@ -4,6 +4,7 @@ package stream
 import (
 	"encoding/csv"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 )
@@ -42,6 +43,7 @@ func LoadPaySim(csvPath string, limit int) ([]RawTransaction, error) {
 	}
 
 	var txns []RawTransaction
+	skipped := 0
 	for {
 		if limit > 0 && len(txns) >= limit {
 			break
@@ -56,12 +58,22 @@ func LoadPaySim(csvPath string, limit int) ([]RawTransaction, error) {
 			continue
 		}
 
-		step, _ := strconv.Atoi(record[colIdx["step"]])
-		amount, _ := strconv.ParseFloat(record[colIdx["amount"]], 64)
-		oldOrig, _ := strconv.ParseFloat(record[colIdx["oldbalanceOrg"]], 64)
-		newOrig, _ := strconv.ParseFloat(record[colIdx["newbalanceOrig"]], 64)
-		oldDest, _ := strconv.ParseFloat(record[colIdx["oldbalanceDest"]], 64)
-		newDest, _ := strconv.ParseFloat(record[colIdx["newbalanceDest"]], 64)
+		// A discarded parse error here used to become a silent 0.0 - and a row
+		// with amount=oldOrig=newOrig=0 exactly matches ClassifyPattern's
+		// "balance_wipe" fraud signature (agent.go: OldBalanceOrig == Amount
+		// && NewBalanceOrig == 0). One corrupted CSV cell could inject a
+		// spurious "fraud" pattern into training/eval data instead of being
+		// rejected as the bad input it is.
+		step, errStep := strconv.Atoi(record[colIdx["step"]])
+		amount, errAmount := strconv.ParseFloat(record[colIdx["amount"]], 64)
+		oldOrig, errOldOrig := strconv.ParseFloat(record[colIdx["oldbalanceOrg"]], 64)
+		newOrig, errNewOrig := strconv.ParseFloat(record[colIdx["newbalanceOrig"]], 64)
+		oldDest, errOldDest := strconv.ParseFloat(record[colIdx["oldbalanceDest"]], 64)
+		newDest, errNewDest := strconv.ParseFloat(record[colIdx["newbalanceDest"]], 64)
+		if errStep != nil || errAmount != nil || errOldOrig != nil || errNewOrig != nil || errOldDest != nil || errNewDest != nil {
+			skipped++
+			continue
+		}
 		isFraud := record[colIdx["isFraud"]] == "1"
 
 		txns = append(txns, RawTransaction{
@@ -78,6 +90,10 @@ func LoadPaySim(csvPath string, limit int) ([]RawTransaction, error) {
 			ErrorBalanceDest: oldDest + amount - newDest,
 			IsFraud:          isFraud,
 		})
+	}
+
+	if skipped > 0 {
+		log.Printf("[warn] LoadPaySim: skipped %d row(s) with unparseable numeric fields", skipped)
 	}
 
 	return txns, nil

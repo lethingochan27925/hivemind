@@ -69,3 +69,8 @@ variable "canary_services" {
   type    = list(string)
   default = []
 }
+
+variable "dlq_arn" {
+  description = "SQS queue ARN for failed async invocations (module.iam.async_dlq_arn)"
+  type        = string
+}

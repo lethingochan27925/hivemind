@@ -7,40 +7,29 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { ExternalLink, GitBranch, ArrowRight, Undo2, Loader2 } from "lucide-react";
 import { useState } from "react";
-import { api } from "@/lib/api";
+import { api, PipelineRun } from "@/lib/api";
 
 /**
  * Pipeline - the delivery half of the platform. Live GitHub Actions state for
  * the whole CI/CD chain (verify -> build -> stage -> smoke -> canary) plus the
- * side lanes (security, dashboard CD, terraform). Public API, no token needed.
+ * side lanes (security, dashboard CD, terraform).
+ *
+ * Runs through dashboard-api's /control/pipeline proxy rather than calling
+ * api.github.com straight from the browser: GitHub's unauthenticated rate
+ * limit is 60 requests/hour PER IP, so every viewer polling GitHub directly
+ * from their own browser shared that budget with everyone else on the same
+ * office/VPN egress address. The proxy gives every viewer one shared,
+ * server-cached budget instead (and an optional GITHUB_TOKEN raises it to
+ * 5,000/hour - see internal/dashboardapi/pipeline.go).
  */
 
+// Display-only now (links to the repo, the CI/CD docs) - the actual API call
+// is server-side and reads GITHUB_REPO itself (defaults to the same repo).
 const REPO = process.env.NEXT_PUBLIC_GITHUB_REPO || "lethingochan27925/hivemind";
 
-interface GhRun {
-  id: number;
-  name: string;
-  display_title: string;
-  status: string; // queued | in_progress | completed
-  conclusion: string | null; // success | failure | cancelled | ...
-  html_url: string;
-  run_number: number;
-  head_branch: string;
-  run_started_at: string;
-  updated_at: string;
-  event: string;
-}
+type GhRun = PipelineRun;
 
-const fetchRuns = async (): Promise<GhRun[]> => {
-  const res = await fetch(
-    `https://api.github.com/repos/${REPO}/actions/runs?per_page=40`,
-    { cache: "no-store" }
-  );
-  if (res.status === 403) throw new Error("GitHub API rate limit reached - retrying soon");
-  if (!res.ok) throw new Error(`GitHub API ${res.status}`);
-  const body = await res.json();
-  return (body.workflow_runs ?? []) as GhRun[];
-};
+const fetchRuns = (): Promise<GhRun[]> => api.getPipelineRuns();
 
 // The release chain, in order, plus independent lanes.
 const CHAIN = ["CI", "Build and Push Images", "Deploy Staging", "Smoke Test", "Deploy Canary Production"];
@@ -62,7 +51,7 @@ function statusLabel(run?: GhRun): string {
 
 function duration(run: GhRun): string {
   const ms = new Date(run.updated_at).getTime() - new Date(run.run_started_at).getTime();
-  if (!Number.isFinite(ms) || ms <= 0) return "—";
+  if (!Number.isFinite(ms) || ms <= 0) return "-";
   const s = Math.round(ms / 1000);
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
 }

@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
@@ -132,6 +133,13 @@ func (d *Dispatcher) countPendingTasks(ctx context.Context) (int, error) {
 // scaleFleet invoke worker bat dong bo, so luong bang so task dang cho nhung
 // khong vuot maxWorkerInvokes. Worker co reserved concurrency nen bi throttle
 // la hanh vi binh thuong, khong phai loi: chi bao loi khi khong invoke duoc ai.
+//
+// Invokes chay SONG SONG, khong tuan tu: voi maxWorkerInvokes mac dinh la 20,
+// vong lap tuan tu cu keo dai moi chu ky dispatch bang 20 lan round-trip HTTP
+// noi tiep nhau toi Lambda Invoke API - moi Invoke doc lap va fire-and-forget
+// (InvocationTypeEvent), nen khong co ly do gi phai doi tung cai. Loi o 1
+// goroutine khong duoc phep dung cac goroutine khac lai, giu dung dac tinh
+// chiu loi cua vong lap tuan tu ban dau: chi bao loi khi khong invoke duoc ai.
 func (d *Dispatcher) scaleFleet(ctx context.Context, pendingTasks int) (int, error) {
 	if d.lambdaClient == nil {
 		return 0, nil
@@ -142,21 +150,32 @@ func (d *Dispatcher) scaleFleet(ctx context.Context, pendingTasks int) (int, err
 		return 0, nil
 	}
 
-	invoked := 0
-	var lastErr error
+	var (
+		mu      sync.Mutex
+		wg      sync.WaitGroup
+		invoked int
+		lastErr error
+	)
 	for i := 0; i < fleetSize; i++ {
-		_, err := d.lambdaClient.Invoke(ctx, &lambdasvc.InvokeInput{
-			FunctionName:   aws.String(d.workerFunction),
-			Qualifier:      aws.String(workerAlias),
-			InvocationType: lambdatypes.InvocationTypeEvent,
-			Payload:        []byte("{}"),
-		})
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		invoked++
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := d.lambdaClient.Invoke(ctx, &lambdasvc.InvokeInput{
+				FunctionName:   aws.String(d.workerFunction),
+				Qualifier:      aws.String(workerAlias),
+				InvocationType: lambdatypes.InvocationTypeEvent,
+				Payload:        []byte("{}"),
+			})
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				lastErr = err
+				return
+			}
+			invoked++
+		}()
 	}
+	wg.Wait()
 
 	if invoked == 0 {
 		return 0, fmt.Errorf("invoking %d worker(s): %w", fleetSize, lastErr)

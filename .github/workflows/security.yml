@@ -79,6 +79,96 @@ jobs:
           docker run --rm -v "$PWD:/src" -w /src "aquasec/trivy:${TRIVY_VERSION}" \
             config terraform --severity CRITICAL --exit-code 1
 
+  image-scan:
+    name: Container image CVE scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      # Same service -> cmd_path mapping as ci.yml's docker job and
+      # build-and-push.yml; pipeline_test.sh asserts all three stay identical.
+      matrix:
+        include:
+          - service: agent-worker
+            cmd_path: ./cmd/worker
+          - service: dispatcher
+            cmd_path: ./cmd/dispatcher
+          - service: reaper
+            cmd_path: ./cmd/heartbeat-reaper
+          - service: salience-decay
+            cmd_path: ./cmd/salience-decay
+          - service: scoring-api
+            cmd_path: ./cmd/scoring-api
+          - service: dashboard-api
+            cmd_path: ./cmd/dashboard-api
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build ${{ matrix.service }}
+        run: |
+          docker build --provenance=false --sbom=false -f Dockerfile.lambda-go \
+            --build-arg SERVICE_PATH=${{ matrix.cmd_path }} \
+            -t "hivemind-${{ matrix.service }}:scan" .
+
+      # Report everything to the Security tab (exit-code 0), same posture as
+      # iac-scan above: MEDIUM/LOW findings are visible but do not block a
+      # push. Base-image and OS-package CVEs are the class of finding this
+      # catches that govulncheck (Go module CVEs only) cannot - previously
+      # nothing in CI looked at what actually shipped inside the image.
+      - name: Scan image (report everything)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD:/src" -w /src \
+            "aquasec/trivy:${TRIVY_VERSION}" image --format sarif \
+            --output "trivy-${{ matrix.service }}.sarif" "hivemind-${{ matrix.service }}:scan"
+
+      - name: Upload results to the Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.service }}.sarif
+          category: trivy-image-${{ matrix.service }}
+
+      - name: Fail on CRITICAL findings
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD:/src" -w /src \
+            "aquasec/trivy:${TRIVY_VERSION}" image --severity CRITICAL --exit-code 1 \
+            "hivemind-${{ matrix.service }}:scan"
+
+  image-scan-python:
+    name: Container image CVE scan (scoring-python)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build scoring-python
+        run: |
+          docker build --provenance=false --sbom=false -f services/scoring-python/Dockerfile \
+            -t hivemind-scoring-python:scan .
+
+      - name: Scan image (report everything)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD:/src" -w /src \
+            "aquasec/trivy:${TRIVY_VERSION}" image --format sarif \
+            --output trivy-scoring-python.sarif hivemind-scoring-python:scan
+
+      - name: Upload results to the Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-scoring-python.sarif
+          category: trivy-image-scoring-python
+
+      - name: Fail on CRITICAL findings
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD:/src" -w /src \
+            "aquasec/trivy:${TRIVY_VERSION}" image --severity CRITICAL --exit-code 1 \
+            hivemind-scoring-python:scan
+
   gitleaks:
     name: Secret scan
     runs-on: ubuntu-latest

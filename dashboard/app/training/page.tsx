@@ -36,6 +36,7 @@ import {
   Tooltip,
   Legend,
 } from "recharts";
+import { useT } from "@/lib/i18n";
 
 /**
  * Training Lab - run the fleet over data batch by batch and watch what it learns.
@@ -97,6 +98,7 @@ const diff = (a: TrainingSnapshot, b: TrainingSnapshot, n: number, seconds: numb
 };
 
 export default function TrainingPage() {
+  const t = useT();
   const [batchSize, setBatchSize] = useState(40);
   const [batchCount, setBatchCount] = useState(4);
   const [coldStart, setColdStart] = useState(true);
@@ -153,7 +155,12 @@ export default function TrainingPage() {
     try {
       const r = await api.ingest(ingestCount, fraudRate);
       setIngestMsg(
-        `Ingested ${r.inserted} new transactions (${r.fraud} fraud / ${r.legit} legit) in ${(r.took_ms / 1000).toFixed(1)}s — ${r.queued_now} now queued.`
+        t("Ingested {n} new transactions ({f} fraud / {l} legit) in {s}s - {q} now queued.")
+          .replace("{n}", String(r.inserted))
+          .replace("{f}", String(r.fraud))
+          .replace("{l}", String(r.legit))
+          .replace("{s}", (r.took_ms / 1000).toFixed(1))
+          .replace("{q}", String(r.queued_now))
       );
       await api.runDispatch().catch(() => {});
     } catch (e) {
@@ -170,15 +177,26 @@ export default function TrainingPage() {
       await new Promise((r) => setTimeout(r, 3000));
       last = await api.trainingMetrics();
       setSnapshot(last);
-      setPhase(`processing — ${last.pending} pending, ${last.investigating} in flight`);
+      setPhase(
+        t("processing - {p} pending, {i} in flight")
+          .replace("{p}", String(last.pending))
+          .replace("{i}", String(last.investigating))
+      );
       if (last.pending === 0 && last.investigating === 0) break;
       // Requeued work does not invoke the fleet by itself; keep it fanned out.
       api.runDispatch().catch(() => {});
     }
     return last;
-  }, []);
+  }, [t]);
 
   const start = async () => {
+    // Cold start archives every active memory before the run - the single
+    // most destructive action in this console, yet the only one that used to
+    // fire with no confirmation at all (every other archive/delete action
+    // here and in Fleet & Memory asks first).
+    if (coldStart && !confirm(t("Start from a blank memory? This archives every active episodic memory before the run begins."))) {
+      return;
+    }
     setRunning(true);
     setError(null);
     setBatches([]);
@@ -193,16 +211,21 @@ export default function TrainingPage() {
       }
 
       if (coldStart) {
-        setPhase("archiving every memory — starting from a blank slate");
+        setPhase(t("archiving every memory - starting from a blank slate"));
         await api.memoryJob("archive_all");
       }
-      setPhase("baseline snapshot");
+      setPhase(t("baseline snapshot"));
       let prev = await api.trainingMetrics();
       setSnapshot(prev);
 
       for (let i = 1; i <= batchCount && !stopRef.current; i++) {
         const t0 = Date.now();
-        setPhase(`batch ${i}/${batchCount} — feeding ${batchSize} cases`);
+        setPhase(
+          t("batch {i}/{n} - feeding {c} cases")
+            .replace("{i}", String(i))
+            .replace("{n}", String(batchCount))
+            .replace("{c}", String(batchSize))
+        );
         await api.feedStream(batchSize);
         await api.runDispatch().catch(() => {});
         const after = await waitForDrain(10 * 60 * 1000);
@@ -210,14 +233,14 @@ export default function TrainingPage() {
         setBatches((b) => [...b, diff(prev, after, i, seconds)]);
         prev = after;
       }
-      setPhase(stopRef.current ? "stopped" : "run complete");
+      setPhase(stopRef.current ? t("stopped") : t("run complete"));
       setBatches((done) => {
         if (done.length > 0) void saveRun(done);
         return done;
       });
     } catch (e) {
       setError((e as Error).message);
-      setPhase("failed");
+      setPhase(t("failed"));
     } finally {
       setRunning(false);
     }
@@ -241,16 +264,16 @@ export default function TrainingPage() {
         result,
         summary
       );
-      setSaveMsg(`Run saved (${r.id.slice(0, 8)}).`);
+      setSaveMsg(t("Run saved ({id}).").replace("{id}", r.id.slice(0, 8)));
       loadRuns();
     } catch (e) {
-      setSaveMsg(`Could not save the run: ${(e as Error).message}`);
+      setSaveMsg(`${t("Could not save the run:")} ${(e as Error).message}`);
     }
   };
 
   const stop = () => {
     stopRef.current = true;
-    setPhase("stopping after this batch…");
+    setPhase(t("stopping after this batch…"));
   };
 
   const exportRun = () => {
@@ -291,11 +314,15 @@ export default function TrainingPage() {
     <div>
       <PageHeader
         title="Training Lab"
-        description="Feed data batch by batch and watch the fleet's memory form — measured, not asserted"
+        description="Feed data batch by batch and watch the fleet's memory form - measured, not asserted"
         error={error}
         actions={
           <Badge variant={running ? "yellow" : batches.length > 0 ? "green" : "default"} dot>
-            {running ? phase || "running" : batches.length > 0 ? `${batches.length} batches` : "idle"}
+            {running
+              ? phase || t("running")
+              : batches.length > 0
+                ? `${batches.length} ${t("batches")}`
+                : t("idle")}
           </Badge>
         }
       />
@@ -305,11 +332,10 @@ export default function TrainingPage() {
         <div className="flex items-start gap-2.5 rounded-lg border border-border bg-bg-inset/40 px-4 py-3 text-[13px] text-text-secondary">
           <GraduationCap size={16} className="text-blue shrink-0 mt-0.5" />
           <span>
-            This does <strong className="text-text-primary">not</strong> fine-tune model weights — Claude
-            Haiku on Bedrock is not trainable here. What forms is{" "}
-            <strong className="text-text-primary">episodic memory</strong>: every closed case is
-            summarised, embedded, and consolidated with similar ones. Each batch below is a measured
-            step, and every number traces back to the append-only audit log.
+            {t("This does")} <strong className="text-text-primary">{t("not")}</strong>{" "}
+            {t("fine-tune model weights - Claude Haiku on Bedrock is not trainable here. What forms is")}{" "}
+            <strong className="text-text-primary">{t("episodic memory")}</strong>
+            {t(": every closed case is summarised, embedded, and consolidated with similar ones. Each batch below is a measured step, and every number traces back to the append-only audit log.")}
           </span>
         </div>
 
@@ -317,19 +343,19 @@ export default function TrainingPage() {
         <div className="grid grid-cols-2 md:grid-cols-5 border border-border rounded-md divide-y md:divide-y-0 md:divide-x divide-border bg-bg-panel/40">
           <Stat
             label="Active memories"
-            value={snapshot?.memories_active ?? "—"}
+            value={snapshot?.memories_active ?? "-"}
             color="purple"
             icon={<Brain size={12} />}
           />
           <Stat
             label="Raw cases absorbed"
-            value={snapshot?.raw_cases_absorbed?.toLocaleString() ?? "—"}
+            value={snapshot?.raw_cases_absorbed?.toLocaleString() ?? "-"}
             color="blue"
             icon={<Database size={12} />}
           />
           <Stat
             label="In flight"
-            value={snapshot ? snapshot.pending + snapshot.investigating : "—"}
+            value={snapshot ? snapshot.pending + snapshot.investigating : "-"}
             color={snapshot && snapshot.pending + snapshot.investigating > 0 ? "yellow" : "default"}
             icon={<Cpu size={12} />}
           />
@@ -338,7 +364,7 @@ export default function TrainingPage() {
             value={
               snapshot
                 ? (snapshot.verdict_fraud + snapshot.verdict_legit + snapshot.verdict_escalate).toLocaleString()
-                : "—"
+                : "-"
             }
             color="green"
             icon={<ShieldCheck size={12} />}
@@ -348,7 +374,7 @@ export default function TrainingPage() {
             value={
               snapshot && snapshot.graded_verdicts > 0
                 ? `${((snapshot.correct_verdicts / snapshot.graded_verdicts) * 100).toFixed(1)}%`
-                : "—"
+                : "-"
             }
             color="green"
             icon={<ShieldAlert size={12} />}
@@ -364,7 +390,7 @@ export default function TrainingPage() {
         >
           <div className="flex flex-wrap items-end gap-4">
             <label className="flex flex-col gap-1 text-[13px] text-text-secondary">
-              Transactions
+              {t("Transactions")}
               <input
                 type="number"
                 min={1}
@@ -376,7 +402,7 @@ export default function TrainingPage() {
               />
             </label>
             <label className="flex flex-col gap-1 text-[13px] text-text-secondary">
-              Fraud share
+              {t("Fraud share")}
               <input
                 type="number"
                 min={0}
@@ -389,9 +415,7 @@ export default function TrainingPage() {
               />
             </label>
             <span className="text-[12px] text-text-tertiary max-w-md pb-2">
-              New cases carry a ground-truth label and land straight in the queue. They are scored
-              synthetically inside the investigate band — this feeds the agent and its memory, it does
-              not exercise the XGBoost scorer.
+              {t("New cases carry a ground-truth label and land straight in the queue. They are scored synthetically inside the investigate band - this feeds the agent and its memory, it does not exercise the XGBoost scorer.")}
             </span>
             <button
               onClick={ingest}
@@ -399,7 +423,7 @@ export default function TrainingPage() {
               className="flex items-center gap-1.5 px-4 py-2 rounded-md bg-purple/12 text-purple border border-purple/30 text-[14px] font-semibold hover:bg-purple/20 disabled:opacity-40 transition-colors ml-auto"
             >
               {ingesting ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-              Generate &amp; ingest
+              {t("Generate & ingest")}
             </button>
           </div>
           {ingestMsg && (
@@ -416,7 +440,7 @@ export default function TrainingPage() {
         <Panel title="Training run" subtitle="each batch: feed cases → drain the queue → measure" resizable={false}>
           <div className="flex flex-wrap items-end gap-4">
             <label className="flex flex-col gap-1 text-[13px] text-text-secondary">
-              Cases per batch
+              {t("Cases per batch")}
               <input
                 type="number"
                 min={5}
@@ -428,7 +452,7 @@ export default function TrainingPage() {
               />
             </label>
             <label className="flex flex-col gap-1 text-[13px] text-text-secondary">
-              Batches
+              {t("Batches")}
               <input
                 type="number"
                 min={1}
@@ -440,7 +464,7 @@ export default function TrainingPage() {
               />
             </label>
             <label className="flex flex-col gap-1 text-[13px] text-text-secondary">
-              Parallel workers
+              {t("Parallel workers")}
               <input
                 type="number"
                 min={1}
@@ -448,7 +472,7 @@ export default function TrainingPage() {
                 value={workers}
                 disabled={running}
                 onChange={(e) => setWorkers(Math.max(1, Math.min(50, Number(e.target.value) || 0)))}
-                title="Written to the agent policy as dispatch_batch — more workers, faster batches"
+                title={t("Written to the agent policy as dispatch_batch - more workers, faster batches")}
                 className="w-28 bg-bg-inset border border-border rounded-md px-2.5 py-2 tnum text-[14px] text-text-primary outline-none focus:border-blue disabled:opacity-50"
               />
             </label>
@@ -460,7 +484,7 @@ export default function TrainingPage() {
                 onChange={(e) => setColdStart(e.target.checked)}
                 className="accent-[#7d9bf0]"
               />
-              Start from a blank memory (archive everything first)
+              {t("Start from a blank memory (archive everything first)")}
             </label>
 
             <div className="flex items-center gap-2 ml-auto pb-1">
@@ -470,7 +494,7 @@ export default function TrainingPage() {
                   className="flex items-center gap-1.5 px-3 py-2 rounded-md border border-border text-[13px] text-text-secondary hover:text-text-primary transition-colors"
                 >
                   <Download size={14} />
-                  Export run
+                  {t("Export run")}
                 </button>
               )}
               {running ? (
@@ -479,7 +503,7 @@ export default function TrainingPage() {
                   className="flex items-center gap-1.5 px-4 py-2 rounded-md bg-red/12 text-red border border-red/30 text-[14px] font-semibold hover:bg-red/20 transition-colors"
                 >
                   <Square size={14} />
-                  Stop
+                  {t("Stop")}
                 </button>
               ) : (
                 <button
@@ -487,7 +511,7 @@ export default function TrainingPage() {
                   className="flex items-center gap-1.5 px-4 py-2 rounded-md bg-blue/12 text-blue border border-blue/30 text-[14px] font-semibold hover:bg-blue/20 transition-colors"
                 >
                   <Play size={14} />
-                  Start training run
+                  {t("Start training run")}
                 </button>
               )}
             </div>
@@ -499,7 +523,7 @@ export default function TrainingPage() {
               {phase}
               {batches.length > 0 && (
                 <span className="ml-auto tnum text-text-tertiary">
-                  {totalCases} cases · ${totalCost.toFixed(5)}
+                  {totalCases} {t("cases")} · ${totalCost.toFixed(5)}
                 </span>
               )}
             </div>
@@ -525,11 +549,11 @@ export default function TrainingPage() {
                       }}
                     />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Bar dataKey="memories" name="active memories" fill={PASTEL.purple} radius={[3, 3, 0, 0]} />
+                    <Bar dataKey="memories" name={t("active memories")} fill={PASTEL.purple} radius={[3, 3, 0, 0]} />
                     <Line
                       type="monotone"
                       dataKey="recall"
-                      name="avg recalled / case"
+                      name={t("avg recalled / case")}
                       stroke={PASTEL.blue}
                       strokeWidth={2}
                       dot={{ r: 3 }}
@@ -564,12 +588,12 @@ export default function TrainingPage() {
                       }}
                     />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Bar dataKey="cases" name="closed" fill={PASTEL.teal} radius={[3, 3, 0, 0]} />
-                    <Bar dataKey="escalated" name="escalated" fill={PASTEL.yellow} radius={[3, 3, 0, 0]} />
+                    <Bar dataKey="cases" name={t("closed")} fill={PASTEL.teal} radius={[3, 3, 0, 0]} />
+                    <Bar dataKey="escalated" name={t("escalated")} fill={PASTEL.yellow} radius={[3, 3, 0, 0]} />
                     <Line
                       type="monotone"
                       dataKey="autoPct"
-                      name="auto-resolve %"
+                      name={t("auto-resolve %")}
                       stroke={PASTEL.green}
                       strokeWidth={2}
                       dot={{ r: 3 }}
@@ -597,17 +621,17 @@ export default function TrainingPage() {
               <table className="w-full text-[13px]">
                 <thead>
                   <tr className="text-left text-text-tertiary border-b border-border bg-bg-inset/40">
-                    <th className="py-2.5 px-4 font-normal">Batch</th>
-                    <th className="py-2.5 px-3 font-normal text-right">Closed</th>
-                    <th className="py-2.5 px-3 font-normal text-right">Auto</th>
-                    <th className="py-2.5 px-3 font-normal text-right">Escalated</th>
-                    <th className="py-2.5 px-3 font-normal text-right">Auto-resolve</th>
-                    <th className="py-2.5 px-3 font-normal text-right">Accuracy</th>
-                    <th className="py-2.5 px-3 font-normal text-right">Avg recall</th>
-                    <th className="py-2.5 px-3 font-normal text-right">Memories</th>
-                    <th className="py-2.5 px-3 font-normal text-right">Fallbacks</th>
-                    <th className="py-2.5 px-3 font-normal text-right">Cost</th>
-                    <th className="py-2.5 px-4 font-normal text-right">Time</th>
+                    <th className="py-2.5 px-4 font-normal">{t("Batch")}</th>
+                    <th className="py-2.5 px-3 font-normal text-right">{t("Closed")}</th>
+                    <th className="py-2.5 px-3 font-normal text-right">{t("Auto")}</th>
+                    <th className="py-2.5 px-3 font-normal text-right">{t("Escalated")}</th>
+                    <th className="py-2.5 px-3 font-normal text-right">{t("Auto-resolve")}</th>
+                    <th className="py-2.5 px-3 font-normal text-right">{t("Accuracy")}</th>
+                    <th className="py-2.5 px-3 font-normal text-right">{t("Avg recall")}</th>
+                    <th className="py-2.5 px-3 font-normal text-right">{t("Memories")}</th>
+                    <th className="py-2.5 px-3 font-normal text-right">{t("Fallbacks")}</th>
+                    <th className="py-2.5 px-3 font-normal text-right">{t("Cost")}</th>
+                    <th className="py-2.5 px-4 font-normal text-right">{t("Time")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -621,7 +645,7 @@ export default function TrainingPage() {
                         {b.autoPct.toFixed(1)}%
                       </td>
                       <td className="py-2 px-3 tnum text-right text-text-secondary">
-                        {b.accuracyPct == null ? "—" : `${b.accuracyPct.toFixed(1)}%`}
+                        {b.accuracyPct == null ? "-" : `${b.accuracyPct.toFixed(1)}%`}
                       </td>
                       <td className="py-2 px-3 tnum text-right text-blue">{b.avgRecall.toFixed(2)}</td>
                       <td className="py-2 px-3 tnum text-right text-purple">{b.memories}</td>
@@ -656,13 +680,13 @@ export default function TrainingPage() {
               <table className="w-full text-[13px]">
                 <thead>
                   <tr className="text-left text-text-tertiary border-b border-border bg-bg-inset/40">
-                    <th className="py-2.5 px-4 font-normal">When</th>
-                    <th className="py-2.5 px-3 font-normal">Run</th>
-                    <th className="py-2.5 px-3 font-normal text-right">Cases</th>
-                    <th className="py-2.5 px-3 font-normal text-right">Auto</th>
-                    <th className="py-2.5 px-3 font-normal text-right">Memories</th>
-                    <th className="py-2.5 px-3 font-normal text-right">Recall first → last</th>
-                    <th className="py-2.5 px-4 font-normal text-right">Cost</th>
+                    <th className="py-2.5 px-4 font-normal">{t("When")}</th>
+                    <th className="py-2.5 px-3 font-normal">{t("Run")}</th>
+                    <th className="py-2.5 px-3 font-normal text-right">{t("Cases")}</th>
+                    <th className="py-2.5 px-3 font-normal text-right">{t("Auto")}</th>
+                    <th className="py-2.5 px-3 font-normal text-right">{t("Memories")}</th>
+                    <th className="py-2.5 px-3 font-normal text-right">{t("Recall first → last")}</th>
+                    <th className="py-2.5 px-4 font-normal text-right">{t("Cost")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -673,7 +697,7 @@ export default function TrainingPage() {
                         <td className="py-2 px-4 tnum text-text-tertiary">
                           {new Date(r.created_at).toLocaleString()}
                         </td>
-                        <td className="py-2 px-3 text-text-primary font-medium">{r.label || "—"}</td>
+                        <td className="py-2 px-3 text-text-primary font-medium">{r.label || "-"}</td>
                         <td className="py-2 px-3 tnum text-right text-text-secondary">{sum.cases ?? 0}</td>
                         <td className="py-2 px-3 tnum text-right text-green">{sum.auto_resolved ?? 0}</td>
                         <td className="py-2 px-3 tnum text-right text-purple">{sum.final_memories ?? 0}</td>
@@ -698,7 +722,7 @@ export default function TrainingPage() {
           subtitle="the append-only audit trail, newest first"
           bodyClassName="p-0"
           actions={
-            <span className="tnum text-[12px] text-text-tertiary">{log.length} events</span>
+            <span className="tnum text-[12px] text-text-tertiary">{log.length} {t("events")}</span>
           }
         >
           {log.length === 0 ? (
@@ -714,15 +738,15 @@ export default function TrainingPage() {
                     {e.action.replace(/_/g, " ")}
                   </span>
                   <span className="min-w-0 flex-1 text-text-secondary truncate">
-                    {e.reasoning ?? <span className="text-text-tertiary">—</span>}
+                    {e.reasoning ?? <span className="text-text-tertiary">-</span>}
                   </span>
                   <span className="shrink-0 flex items-center gap-2 tnum text-[11px] text-text-tertiary">
                     {e.memory_hits != null && e.action === "memory_recall" && (
-                      <span className="text-blue">{e.memory_hits} recalled</span>
+                      <span className="text-blue">{e.memory_hits} {t("recalled")}</span>
                     )}
                     {e.latency_ms != null && <span>{e.latency_ms} ms</span>}
                     {e.action === "bedrock_reasoning" && !e.bedrock_model && (
-                      <span className="text-yellow">fallback</span>
+                      <span className="text-yellow">{t("fallback")}</span>
                     )}
                   </span>
                 </li>
@@ -748,6 +772,7 @@ export default function TrainingPage() {
  * makes the agent's process visible instead of leaving it a black box.
  */
 function PipelineFunnel({ log }: { log: TrainingLogEntry[] }) {
+  const t = useT();
   const stages = [
     {
       key: "claim",
@@ -802,7 +827,7 @@ function PipelineFunnel({ log }: { log: TrainingLogEntry[] }) {
         {stages.map((st, i) => (
           <div key={st.key} className="flex items-center gap-3">
             <span className="w-36 shrink-0 text-[13px]">
-              <span className="block font-semibold text-text-primary">{st.label}</span>
+              <span className="block font-semibold text-text-primary">{t(st.label)}</span>
               <span className="block text-[11px] text-text-tertiary">{st.desc}</span>
             </span>
             <div className="flex-1 h-6 rounded bg-bg-inset overflow-hidden">
@@ -824,13 +849,13 @@ function PipelineFunnel({ log }: { log: TrainingLogEntry[] }) {
       </div>
       <div className="mt-3 pt-3 border-t border-border flex flex-wrap gap-x-6 gap-y-1 text-[12px] text-text-tertiary">
         <span>
-          last <span className="tnum text-text-secondary">{log.length}</span> audited events
+          {t("last")} <span className="tnum text-text-secondary">{log.length}</span> {t("audited events")}
         </span>
         <span>
-          avg recalled per case: <span className="tnum text-blue">{avgHits.toFixed(2)}</span>
+          {t("avg recalled per case:")} <span className="tnum text-blue">{avgHits.toFixed(2)}</span>
         </span>
         <span>
-          avg reasoning: <span className="tnum text-purple">{Math.round(avgLatency)} ms</span>
+          {t("avg reasoning:")} <span className="tnum text-purple">{Math.round(avgLatency)} ms</span>
         </span>
       </div>
     </div>

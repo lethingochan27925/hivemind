@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/lethingochan27925/hivemind/internal/scorer"
 	"github.com/lethingochan27925/hivemind/pkg/cockroach"
 )
@@ -28,11 +29,24 @@ func ScoreAndTag(txns []RawTransaction, riskScores []float64) []ScoredTransactio
 	return scored
 }
 
+// InsertTransactions writes a batch of scored transactions. Previously this
+// ran one INSERT per row over its own network round-trip; for a 1000-row feed
+// (the size cmd/gen-data and the dashboard's "Feed N" both default to) that
+// is 1000 sequential round-trips to CockroachDB Cloud before the fleet can
+// even start. pgx.Batch pipelines every statement over one connection in one
+// round-trip (see the pgx docs' "Batch" type) — the standard way to remove
+// per-row latency from bulk writes without hand-building a giant multi-row
+// VALUES string. ON CONFLICT DO NOTHING per statement is preserved exactly,
+// which a raw COPY (pgx.CopyFrom) cannot do.
 func InsertTransactions(ctx context.Context, db *cockroach.Client, txns []ScoredTransaction) (int, error) {
-	inserted := 0
+	if len(txns) == 0 {
+		return 0, nil
+	}
+
+	batch := &pgx.Batch{}
 	for _, t := range txns {
 		id := uuid.New().String()
-		_, err := db.Pool.Exec(ctx, `
+		batch.Queue(`
 			INSERT INTO transactions (
 				id, step, type, amount,
 				name_orig, old_balance_orig, new_balance_orig,
@@ -46,10 +60,22 @@ func InsertTransactions(ctx context.Context, db *cockroach.Client, txns []Scored
 			t.NameDest, t.OldBalanceDest, t.NewBalanceDest,
 			t.ErrorBalanceOrig, t.ErrorBalanceDest,
 			t.RiskScore, t.RiskTier, t.IsFraud)
+	}
+
+	br := db.Pool.SendBatch(ctx, batch)
+	defer br.Close()
+
+	// Count rows CockroachDB actually inserted, not statements attempted - the
+	// same distinction InsertMediumTasks below already has to get right,
+	// since a blind per-statement counter over-reports the moment ON CONFLICT
+	// skips a row.
+	inserted := 0
+	for range txns {
+		tag, err := br.Exec()
 		if err != nil {
 			return inserted, fmt.Errorf("inserting transaction: %w", err)
 		}
-		inserted++
+		inserted += int(tag.RowsAffected())
 	}
 	return inserted, nil
 }

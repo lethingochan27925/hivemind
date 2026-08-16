@@ -306,6 +306,7 @@ echo
 echo "== 7. the canary can actually fail =="
 has deploy-canary.yml 'AdditionalVersionWeights' "canary shifts weighted traffic"
 has deploy-canary.yml 'describe-alarms'          "canary reads the CloudWatch alarm"
+has deploy-canary.yml 'describe-alarm-history'   "canary checks the whole observation window, not just the final poll"
 has deploy-canary.yml 'Promote to 100'           "canary promotes when healthy"
 has deploy-canary.yml 'Roll back'                "canary has a rollback path"
 has deploy-canary.yml 'does not exist'           "a missing alarm fails instead of promoting"

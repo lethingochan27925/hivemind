@@ -10,7 +10,7 @@ import { ArchiveRestore, Loader2, BrainCircuit, AlertTriangle } from "lucide-rea
  *
  * Episodic memory is the product's core claim, and it can silently go missing:
  * the A/B experiment archives every memory for its cold phase, and one aborted
- * run left the fleet operating on 15 of 115 memories for a day — escalation
+ * run left the fleet operating on 15 of 115 memories for a day - escalation
  * jumped to 87% and nothing on the dashboard said why. This bar makes that
  * state impossible to miss, and the restore button makes it a one-click fix.
  *

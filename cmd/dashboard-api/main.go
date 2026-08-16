@@ -33,6 +33,7 @@ func buildMux(s *dashboardapi.Server) *http.ServeMux {
 	mux.HandleFunc("/infrastructure/simulate-crash", s.SimulateCrash)
 	mux.HandleFunc("/cost", s.GetCost)
 	mux.HandleFunc("/cost/infrastructure", s.GetCloudCost)
+	mux.HandleFunc("/control/pipeline", s.GetPipelineRuns)
 
 	// Control plane — mutates the live system
 	mux.HandleFunc("/control/fleet", s.FleetHandler)

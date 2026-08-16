@@ -5,7 +5,7 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 > **Hackathon:** CockroachDB × AWS — Build with Agentic Memory
-> **Submission details:** [`SUBMISSION.md`](SUBMISSION.md) · **Docs:** [`docs/`](docs/) · **Tests:** [`test/`](test/)
+> **Submission details:** [`SUBMISSION.md`](SUBMISSION.md) · **Docs:** [`docs/`](docs/) · **Tests:** [`test/`](test/) · **Demo video script:** [`VIDEO_SCRIPT.md`](VIDEO_SCRIPT.md)
 
 **One line:** HiveMind is the memory layer *and the control platform* for a fleet of AI agents in production — the agents survive crashes and region failures because their state lives in CockroachDB, and a human can watch, tune, and override every part of the system from one console.
 
@@ -90,6 +90,7 @@ Not a dashboard that watches — a console that **operates**. Ten pages, bilingu
 Highlights:
 
 - **Agent policy, live.** Move the auto-approve / auto-block thresholds, fan-out, and model-failure behaviour while the fleet runs — the agent re-reads them every task, no deploy.
+- **Human-in-the-loop learning.** Approve, reject, or override a case — one at a time or up to 500 in bulk — and the decision doesn't just get logged: it's embedded and **pinned into episodic memory** (salience 2.0, immune to decay), so the next similar case recalls exactly what a human taught it. One memory, two teachers — self-learned and human-taught flow through the same recall path.
 - **Decision trace.** Open any transaction and see the anatomy of the verdict: which memories were recalled *with their real vector similarity*, what the model was told, what it cost, and any crash/resume.
 - **Chaos button + recovery tracker.** Kill an agent and watch *killed → reaper re-queued (+Xs) → resumed from checkpoint (+Ys)*.
 - **Memory administration.** Pin a case so decay can never forget it, archive one out of the vector index, or run the decay job on demand.
@@ -112,7 +113,8 @@ Full reference: [`docs/CONTROL_PLANE.md`](docs/CONTROL_PLANE.md) · API: [`docs/
 | An agent dies mid-case | `heartbeat_at` + reaper + `scratchpad` | Resumes at the same step in ≤30s |
 | A region goes down | CockroachDB multi-region consensus | Writes continue, **RPO = 0** |
 | Bedrock unavailable | Adaptive retry, then policy: escalate **or** re-queue | No silent bad verdicts, no human flood |
-| A bad deploy | Canary + auto-rollback, plus one-click manual rollback | Previous version restored |
+| An async invocation exhausts its retries | SQS dead-letter queue on every async-invoked function | Nothing vanishes silently — a failed invocation sits visibly in a queue |
+| A bad deploy | Canary + auto-rollback (now checks the **whole** observation window, not just the final poll), plus one-click manual rollback | Previous version restored |
 
 ---
 
@@ -126,7 +128,7 @@ cp .env.example .env         # fill in CockroachDB + AWS values
 ./scripts/init.sh            # stands up EVERYTHING from zero
 ```
 
-`init.sh` runs Terraform, builds and pushes all seven container images, publishes each Lambda and moves its `live` alias, loads the schema, seeds PaySim, builds and deploys the dashboard, and pushes the GitHub Actions secrets.
+`init.sh` runs Terraform, builds and pushes all seven container images, publishes each Lambda and moves its `live` alias, loads the schema (`python3 scripts/run_schema.py`, best-effort — warns with the exact command if `psycopg2` isn't installed rather than silently skipping it), builds and deploys the dashboard, and pushes the GitHub Actions secrets. It does not seed data — the fleet starts on an empty queue by design, so the first thing you do after `init.sh` is a deliberate choice: `make feed N=200` or the **Feed** button in Mission Control.
 
 Day-to-day (no need to re-run `init.sh`):
 
