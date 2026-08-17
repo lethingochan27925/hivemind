@@ -29,6 +29,14 @@ def main() -> None:
     conn = psycopg2.connect(load_database_url())
     conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
     try:
+        # 001_init.sql creates a VECTOR INDEX; on a fresh cluster (e.g. CI's
+        # single-node container, started clean on every run) that syntax is
+        # gated behind this cluster setting until enabled once. Idempotent -
+        # safe to run on every invocation, including against an existing
+        # cluster where it was already turned on.
+        with conn.cursor() as cur:
+            cur.execute("SET CLUSTER SETTING feature.vector_index.enabled = true")
+
         for path in files:
             sql = path.read_text(encoding="utf-8").strip()
             if not sql:
