@@ -11,6 +11,14 @@ locals {
 resource "aws_s3_bucket" "evidence" {
   bucket = "${var.project}-${var.environment}-evidence"
   tags   = merge(local.common_tags, { Name = "${var.project}-${var.environment}-evidence" })
+
+  # Versioning below means a plain `terraform destroy` fails with
+  # BucketNotEmpty even right after a fresh apply: deleting current-version
+  # objects still leaves every prior version + delete marker behind, and S3
+  # requires zero of everything before it allows DeleteBucket. force_destroy
+  # tells the provider to purge all of that itself instead of requiring a
+  # manual `aws s3api list-object-versions` + `delete-objects` dance first.
+  force_destroy = true
 }
 
 resource "aws_s3_bucket_versioning" "evidence" {
@@ -60,8 +68,9 @@ resource "aws_s3_bucket_lifecycle_configuration" "evidence" {
 
 # -- S3: Lambda artifacts bucket -----------------------------------------------
 resource "aws_s3_bucket" "lambda_artifacts" {
-  bucket = "${var.project}-${var.environment}-lambda-artifacts"
-  tags   = merge(local.common_tags, { Name = "${var.project}-${var.environment}-lambda-artifacts" })
+  bucket        = "${var.project}-${var.environment}-lambda-artifacts"
+  tags          = merge(local.common_tags, { Name = "${var.project}-${var.environment}-lambda-artifacts" })
+  force_destroy = true # same versioned-bucket reasoning as aws_s3_bucket.evidence above
 }
 
 resource "aws_s3_bucket_versioning" "lambda_artifacts" {
@@ -92,6 +101,9 @@ resource "aws_s3_bucket_public_access_block" "lambda_artifacts" {
 resource "aws_s3_bucket" "dashboard" {
   bucket = "${var.project}-${var.environment}-dashboard"
   tags   = merge(local.common_tags, { Name = "${var.project}-${var.environment}-dashboard" })
+  # Not versioned, but deploy-dashboard.sh always leaves it holding the live
+  # site's files - same BucketNotEmpty problem on destroy without this.
+  force_destroy = true
 }
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "dashboard" {

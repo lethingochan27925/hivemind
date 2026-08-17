@@ -17,6 +17,11 @@ resource "aws_ecr_repository" "services" {
   name                 = "${var.project}/${var.environment}/${each.key}"
   image_tag_mutability = "MUTABLE"
 
+  # Same reasoning as force_destroy on the S3 buckets in modules/storage:
+  # every repo here always has images pushed by deploy-lambda.sh, so a plain
+  # `terraform destroy` fails with RepositoryNotEmptyException without this.
+  force_delete = true
+
   image_scanning_configuration {
     scan_on_push = true
   }
