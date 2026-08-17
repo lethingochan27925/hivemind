@@ -111,23 +111,15 @@ jobs:
           TF_VAR_image_tag: ${{ steps.set-tag.outputs.image_tag }}
         run: terraform apply -auto-approve -input=false
 
-  integration-test:
-    name: Integration tests against CockroachDB
-    needs: deploy-staging
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          check-latest: true
-          cache: true
-
-      - name: Run integration tests
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: go test ./internal/memory/... -tags=integration -count=1 -v
+# internal/memory's integration tests (working_integration_test.go,
+# salience_integration_test.go, concurrency_integration_test.go) already run
+# on every push in ci.yml's go-integration job, against a disposable
+# single-node CockroachDB container. Running the SAME tests here against
+# secrets.DATABASE_URL - the live cluster this staging deploy just pointed
+# at, the same one demo data lives in - is both redundant and unsafe: the
+# tests write/claim/complete real rows (claimSpecificTask marks any real
+# "pending" task it encounters as done/legit while hunting for its own test
+# task), and their assertions assume an empty table, which a populated live
+# cluster violates in ways that showed up as flaky failures here instead of
+# in ci.yml. A job that removed this deliberately used to live here; if you
+# ever want staging-specific checks, write them read-only.

@@ -133,7 +133,11 @@ func TestDecaySalience_ArchivesBelowThreshold(t *testing.T) {
 
 	// archiveBelow / decayFactor sits just above the threshold pre-decay, so
 	// one multiplication by decayFactor reliably pushes it under archiveBelow.
-	id := insertTestMemory(t, db, archiveBelow/decayFactor+0.001, longAgo, false)
+	// The epsilon must be subtracted, not added: archiveBelow/decayFactor*decayFactor
+	// == archiveBelow exactly, and decayFactor < 1, so adding epsilon before
+	// multiplying leaves the result epsilon*decayFactor *above* archiveBelow
+	// instead of below it.
+	id := insertTestMemory(t, db, archiveBelow/decayFactor-0.001, longAgo, false)
 	defer cleanupTestMemory(db, id)
 
 	if err := DecaySalience(context.Background(), db); err != nil {

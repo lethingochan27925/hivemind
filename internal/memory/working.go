@@ -4,6 +4,7 @@ package memory
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/lethingochan27925/hivemind/pkg/cockroach"
@@ -17,9 +18,32 @@ type Task struct {
 	Scratchpad    []byte
 }
 
+// claimRetryAttempts/claimRetryDelay work around a real CockroachDB bug
+// (cockroachdb/cockroach#167582): SKIP LOCKED's scanner skips any key with an
+// intent, including one from a transaction that already committed but whose
+// intent hasn't been asynchronously resolved yet. A task inserted moments
+// ago (dispatcher just wrote it, or a test just inserted its own fixture)
+// can therefore make ClaimNextTask see zero pending rows even though one
+// genuinely exists - the intent clears on its own within milliseconds, so a
+// couple of short retries is enough without meaningfully slowing down the
+// real "queue is empty" case.
+const claimRetryAttempts = 3
+const claimRetryDelay = 25 * time.Millisecond
+
 // ClaimNextTask lay 1 task pending va lock no bang SKIP LOCKED de nhieu
 // worker chay song song khong bao gio claim trung 1 task.
 func ClaimNextTask(ctx context.Context, db *cockroach.Client, workerID string) (*Task, error) {
+	for attempt := 1; attempt <= claimRetryAttempts; attempt++ {
+		task, err := claimNextTaskOnce(ctx, db, workerID)
+		if err != nil || task != nil || attempt == claimRetryAttempts {
+			return task, err
+		}
+		time.Sleep(claimRetryDelay)
+	}
+	return nil, nil
+}
+
+func claimNextTaskOnce(ctx context.Context, db *cockroach.Client, workerID string) (*Task, error) {
 	tx, err := db.Pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("beginning transaction: %w", err)
