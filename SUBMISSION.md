@@ -2,7 +2,7 @@
 
 **Hackathon:** CockroachDB × AWS — Build with Agentic Memory
 **Repository:** https://github.com/lethingochan27925/hivemind (public, Apache 2.0)
-**Live dashboard:** https://d3j7q4yqifjmc1.cloudfront.net
+**Live dashboard:** https://da5lybprgom1w.cloudfront.net
 **Demo video (< 3 min):** _<YouTube/Vimeo link>_ — recorded from [`VIDEO_SCRIPT.md`](VIDEO_SCRIPT.md)
 
 ## One-line pitch

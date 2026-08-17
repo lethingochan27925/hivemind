@@ -29,13 +29,16 @@ def main() -> None:
     conn = psycopg2.connect(load_database_url())
     conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
     try:
-        # 001_init.sql creates a VECTOR INDEX; on a fresh cluster (e.g. CI's
-        # single-node container, started clean on every run) that syntax is
-        # gated behind this cluster setting until enabled once. Idempotent -
-        # safe to run on every invocation, including against an existing
-        # cluster where it was already turned on.
-        with conn.cursor() as cur:
-            cur.execute("SET CLUSTER SETTING feature.vector_index.enabled = true")
+        # 001_init.sql creates a VECTOR INDEX. On clusters where this was
+        # still a preview feature (e.g. v25.2), it's gated behind this
+        # cluster setting until enabled once. Once the feature is GA (e.g.
+        # v25.4+, CockroachDB Cloud), the setting is removed entirely and
+        # this errors with "unknown cluster setting" - safe to ignore.
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SET CLUSTER SETTING feature.vector_index.enabled = true")
+        except psycopg2.errors.UndefinedParameter:
+            pass  # autocommit mode: no open transaction to clean up
 
         for path in files:
             sql = path.read_text(encoding="utf-8").strip()

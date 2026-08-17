@@ -83,13 +83,15 @@ jobs:
       # command (cockroachdb/cockroach's image needs `start-single-node
       # --insecure` to run as a dev cluster), so this runs it as an ordinary
       # docker container instead — the pattern CockroachDB's own docs use for
-      # "Start a Cluster in Docker". Pinned to v24.3, the first LTS line with
-      # vector search GA'd (CREATE VECTOR INDEX in migrations/001_init.sql
-      # needs it) — bump this if a newer LTS is what CockroachDB Cloud runs.
+      # "Start a Cluster in Docker". CREATE VECTOR INDEX (migrations/001_init.sql)
+      # was only introduced as preview in v25.2 - v24.3 doesn't have the syntax
+      # or the enabling cluster setting at all ("unknown cluster setting").
+      # Pinned to v25.4, the first LTS line after that preview - bump this if
+      # a newer LTS is what CockroachDB Cloud runs.
       - name: Start CockroachDB
         run: |
           docker run -d --name crdb -p 26257:26257 -p 8080:8080 \
-            cockroachdb/cockroach:v24.3.8 start-single-node --insecure
+            cockroachdb/cockroach:v25.4.14 start-single-node --insecure
           for i in $(seq 1 30); do
             if docker exec crdb cockroach sql --insecure -e "SELECT 1" >/dev/null 2>&1; then
               echo "CockroachDB is ready"
