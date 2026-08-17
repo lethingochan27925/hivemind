@@ -56,10 +56,27 @@ log "Loading Terraform secrets from .env"
 source scripts/load-tf-vars.sh
 
 log "Emptying S3 buckets (Terraform cannot destroy non-empty buckets)"
+# `aws s3 rm --recursive` alone is not enough on a versioned bucket (evidence,
+# lambda-artifacts): it only adds delete markers over the current objects,
+# leaving every prior version behind, so S3 still refuses DeleteBucket with
+# BucketNotEmpty. Purge Versions + DeleteMarkers via s3api too, every time -
+# harmless no-op on the non-versioned dashboard bucket. This used to live in
+# a separate loop after `cd "$TERRAFORM_DIR"` that read bucket names via
+# `terraform -chdir=terraform output` - chdir'ing to "terraform" while
+# already inside terraform/ resolves to a directory that doesn't exist, so
+# that loop silently iterated zero times and never actually ran.
 for bucket_suffix in dashboard evidence lambda-artifacts; do
   bucket_name="${PROJECT}-${ENVIRONMENT}-${bucket_suffix}"
   if aws s3api head-bucket --bucket "$bucket_name" >/dev/null 2>&1; then
     aws s3 rm "s3://${bucket_name}" --recursive >/dev/null
+
+    aws s3api list-object-versions --bucket "$bucket_name" --output json \
+      --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' > /tmp/_v.json 2>/dev/null \
+      && aws s3api delete-objects --bucket "$bucket_name" --delete file:///tmp/_v.json >/dev/null 2>&1 || true
+    aws s3api list-object-versions --bucket "$bucket_name" --output json \
+      --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' > /tmp/_d.json 2>/dev/null \
+      && aws s3api delete-objects --bucket "$bucket_name" --delete file:///tmp/_d.json >/dev/null 2>&1 || true
+
     ok "  Emptied ${bucket_name}"
   else
     log "  ${bucket_name}: does not exist, skipping"
@@ -87,18 +104,6 @@ done
 log "Running terraform destroy"
 cd "$TERRAFORM_DIR"
 terraform init >/dev/null
-
-# S3 co versioning khong xoa duoc khi con version/delete-marker -> don truoc.
-for B in $(terraform -chdir=terraform output -json 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(' '.join(str(d[k]['value']) for k in ('evidence_bucket','dashboard_bucket_name') if k in d))" 2>/dev/null); do
-  echo "  don bucket $B"
-  aws s3api list-object-versions --bucket "$B" --output json \
-    --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' > /tmp/_v.json 2>/dev/null \
-    && aws s3api delete-objects --bucket "$B" --delete file:///tmp/_v.json >/dev/null 2>&1 || true
-  aws s3api list-object-versions --bucket "$B" --output json \
-    --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' > /tmp/_d.json 2>/dev/null \
-    && aws s3api delete-objects --bucket "$B" --delete file:///tmp/_d.json >/dev/null 2>&1 || true
-done
-
 terraform destroy -auto-approve
 cd - >/dev/null
 
